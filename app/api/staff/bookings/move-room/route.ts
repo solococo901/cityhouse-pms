@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  createClient,
+} from "@/lib/supabase/server";
 
 export async function POST(
   request: Request
 ) {
   try {
-
     const body =
       await request.json();
 
@@ -15,7 +16,6 @@ export async function POST(
       targetRoomId,
     } = body;
 
-
     if (
       !bookingRoomId ||
       !targetRoomId
@@ -23,7 +23,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "Missing bookingRoomId or targetRoomId",
+            "Thiếu bookingRoomId hoặc targetRoomId.",
         },
         {
           status: 400,
@@ -31,31 +31,24 @@ export async function POST(
       );
     }
 
-
     const supabase =
       await createClient();
 
-
     const {
-      data: {
-        user,
-      },
+      data: { user },
     } =
       await supabase.auth.getUser();
-
 
     if (!user) {
       return NextResponse.json(
         {
-          error:
-            "Unauthorized",
+          error: "Unauthorized",
         },
         {
           status: 401,
         }
       );
     }
-
 
     const {
       data,
@@ -72,9 +65,7 @@ export async function POST(
         }
       );
 
-
     if (error) {
-
       let message =
         error.message;
 
@@ -105,7 +96,6 @@ export async function POST(
           "Bạn không có quyền đổi phòng.";
       }
 
-
       return NextResponse.json(
         {
           error: message,
@@ -114,17 +104,14 @@ export async function POST(
           status: 400,
         }
       );
-
     }
-
 
     return NextResponse.json({
       success: true,
       data,
     });
-
-
-  } catch {
+  } catch (error) {
+    console.error(error);
 
     return NextResponse.json(
       {
@@ -135,6 +122,5 @@ export async function POST(
         status: 500,
       }
     );
-
   }
 }
