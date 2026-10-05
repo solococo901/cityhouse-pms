@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AdminDashboardPage() {
@@ -14,13 +15,6 @@ export default async function AdminDashboardPage() {
     `)
     .order("name");
 
-  const { count: bookingCount } = await supabase
-    .from("bookings")
-    .select("*", {
-      count: "exact",
-      head: true,
-    });
-
   const { count: roomCount } = await supabase
     .from("rooms")
     .select("*", {
@@ -28,104 +22,107 @@ export default async function AdminDashboardPage() {
       head: true,
     });
 
+  const { count: bookingCount } = await supabase
+    .from("bookings")
+    .select("*", {
+      count: "exact",
+      head: true,
+    });
+
   return (
-    <main className="min-h-screen bg-slate-50 p-8">
+    <div className="mx-auto max-w-7xl">
 
-      <div className="mx-auto max-w-7xl">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-slate-900">
+          Dashboard
+        </h1>
 
-        <div className="mb-8">
-          <p className="text-sm font-semibold text-blue-600">
-            CITYHOUSE PMS
+        <p className="mt-1 text-sm text-slate-500">
+          Tổng quan hệ thống CityHouse PMS
+        </p>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-3">
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <p className="text-sm text-slate-500">
+            Properties
           </p>
 
-          <h1 className="mt-1 text-3xl font-bold text-slate-900">
-            Admin Dashboard
-          </h1>
-
-          <p className="mt-2 text-slate-500">
-            Property management overview
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {properties?.length ?? 0}
           </p>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <p className="text-sm text-slate-500">
+            Rooms
+          </p>
 
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Properties
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {properties?.length ?? 0}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Rooms
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {roomCount ?? 0}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-500">
-              Bookings
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {bookingCount ?? 0}
-            </p>
-          </div>
-
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {roomCount ?? 0}
+          </p>
         </div>
 
-        <div className="mt-8">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <p className="text-sm text-slate-500">
+            Bookings
+          </p>
 
-          <h2 className="mb-4 text-xl font-semibold">
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {bookingCount ?? 0}
+          </p>
+        </div>
+
+      </div>
+
+      <div className="mt-8">
+
+        <div className="mb-4 flex items-center justify-between">
+
+          <h2 className="text-lg font-semibold text-slate-900">
             Properties
           </h2>
 
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <Link
+            href="/admin/properties"
+            className="text-sm font-medium text-blue-600"
+          >
+            View all
+          </Link>
 
-            {properties?.map((property) => (
-              <div
-                key={property.id}
-                className="rounded-2xl border bg-white p-6 shadow-sm"
-              >
+        </div>
 
-                <div className="flex items-start justify-between">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
-                  <div>
-                    <p className="text-xs font-semibold text-blue-600">
-                      {property.code}
-                    </p>
+          {properties?.map((property) => (
 
-                    <h3 className="mt-1 text-lg font-semibold">
-                      {property.name}
-                    </h3>
-                  </div>
+            <Link
+              key={property.id}
+              href={`/admin/properties/${property.id}`}
+              className="rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm"
+            >
 
-                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-                    Active
-                  </span>
+              <p className="text-xs font-semibold text-blue-600">
+                {property.code}
+              </p>
 
-                </div>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                {property.name}
+              </h3>
 
-                <p className="mt-4 text-sm text-slate-500">
-                  {property.address || "No address"}
-                </p>
+              <p className="mt-2 text-sm text-slate-500">
+                {property.address || "No address"}
+              </p>
 
-              </div>
-            ))}
+            </Link>
 
-          </div>
+          ))}
 
         </div>
 
       </div>
 
-    </main>
+    </div>
   );
 }
