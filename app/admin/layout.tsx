@@ -1,7 +1,12 @@
+import { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function HomePage() {
+export default async function AdminLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const supabase = await createClient();
 
   const {
@@ -14,21 +19,23 @@ export default async function HomePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, active")
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
+  if (!profile || !profile.active) {
     redirect("/login");
   }
 
-  if (
-    profile.role === "super_admin" ||
-    profile.role === "admin" ||
-    profile.role === "manager"
-  ) {
-    redirect("/admin/dashboard");
+  const adminRoles = [
+    "super_admin",
+    "admin",
+    "manager",
+  ];
+
+  if (!adminRoles.includes(profile.role)) {
+    redirect("/staff/dashboard");
   }
 
-  redirect("/staff/dashboard");
+  return <>{children}</>;
 }
