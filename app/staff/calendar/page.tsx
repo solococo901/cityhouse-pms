@@ -1,5 +1,6 @@
 import ReservationCalendar from "@/components/staff/reservation-calendar";
 import CreateBookingModal from "@/components/staff/create-booking-modal";
+import CalendarToolbar from "@/components/staff/calendar-toolbar";
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -7,24 +8,20 @@ import { createClient } from "@/lib/supabase/server";
    DATE HELPERS
 ====================================================== */
 
-function todayVietnam() {
+function currentVietnamMonth() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Ho_Chi_Minh",
     year: "numeric",
     month: "2-digit",
-    day: "2-digit",
   }).formatToParts(new Date());
 
   const year =
-    parts.find((part) => part.type === "year")?.value ?? "";
+    parts.find((item) => item.type === "year")?.value ?? "";
 
   const month =
-    parts.find((part) => part.type === "month")?.value ?? "";
+    parts.find((item) => item.type === "month")?.value ?? "";
 
-  const day =
-    parts.find((part) => part.type === "day")?.value ?? "";
-
-  return `${year}-${month}-${day}`;
+  return `${year}-${month}`;
 }
 
 function addDays(
@@ -44,11 +41,95 @@ function addDays(
     .slice(0, 10);
 }
 
+function getMonthDates(
+  month: string
+) {
+  const [
+    year,
+    monthNumber,
+  ] = month
+    .split("-")
+    .map(Number);
+
+  const totalDays =
+    new Date(
+      Date.UTC(
+        year,
+        monthNumber,
+        0
+      )
+    ).getUTCDate();
+
+  return Array.from(
+    {
+      length: totalDays,
+    },
+    (_, index) =>
+      `${month}-${String(
+        index + 1
+      ).padStart(2, "0")}`
+  );
+}
+
 /* ======================================================
    PAGE
 ====================================================== */
 
-export default async function StaffCalendarPage() {
+export default async function StaffCalendarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    month?:
+      | string
+      | string[];
+  }>;
+}) {
+  /* ======================================================
+     SEARCH PARAMS
+  ====================================================== */
+
+  const params =
+    await searchParams;
+
+  const rawMonth =
+    Array.isArray(
+      params.month
+    )
+      ? params.month[0]
+      : params.month;
+
+  const month =
+    rawMonth &&
+    /^\d{4}-\d{2}$/.test(
+      rawMonth
+    )
+      ? rawMonth
+      : currentVietnamMonth();
+
+  /* ======================================================
+     CALENDAR DATES
+  ====================================================== */
+
+  const dates =
+    getMonthDates(
+      month
+    );
+
+  const startDate =
+    dates[0];
+
+  const endDate =
+    addDays(
+      dates[
+        dates.length - 1
+      ],
+      1
+    );
+
+  /* ======================================================
+     SUPABASE
+  ====================================================== */
+
   const supabase =
     await createClient();
 
@@ -66,8 +147,13 @@ export default async function StaffCalendarPage() {
       code,
       name
     `)
-    .eq("active", true)
-    .order("name")
+    .eq(
+      "active",
+      true
+    )
+    .order(
+      "name"
+    )
     .limit(1)
     .maybeSingle();
 
@@ -76,36 +162,13 @@ export default async function StaffCalendarPage() {
     !property
   ) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
-        Không tìm thấy property.
+      <div className="p-8">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          Không tìm thấy property.
+        </div>
       </div>
     );
   }
-
-  /* ======================================================
-     CALENDAR RANGE
-  ====================================================== */
-
-  const startDate =
-    todayVietnam();
-
-  const dates =
-    Array.from(
-      {
-        length: 7,
-      },
-      (_, index) =>
-        addDays(
-          startDate,
-          index
-        )
-    );
-
-  const endDate =
-    addDays(
-      startDate,
-      7
-    );
 
   /* ======================================================
      LOAD DATA
@@ -115,6 +178,8 @@ export default async function StaffCalendarPage() {
     roomsResult,
     roomTypesResult,
     bookingRoomsResult,
+    inventoryResult,
+    ratesResult,
   ] = await Promise.all([
     /* ROOMS */
 
@@ -156,6 +221,9 @@ export default async function StaffCalendarPage() {
       .eq(
         "active",
         true
+      )
+      .order(
+        "name"
       ),
 
     /* BOOKINGS */
@@ -164,11 +232,15 @@ export default async function StaffCalendarPage() {
       .from("booking_rooms")
       .select(`
         id,
+
         room_id,
         room_type_id,
 
         check_in,
         check_out,
+
+        check_in_time,
+        check_out_time,
 
         adults,
         children,
@@ -186,6 +258,9 @@ export default async function StaffCalendarPage() {
 
           notes,
 
+          check_in_time,
+          check_out_time,
+
           guests (
             first_name,
             last_name,
@@ -194,6 +269,10 @@ export default async function StaffCalendarPage() {
           )
         )
       `)
+      .eq(
+        "bookings.property_id",
+        property.id
+      )
       .lt(
         "check_in",
         endDate
@@ -202,30 +281,104 @@ export default async function StaffCalendarPage() {
         "check_out",
         startDate
       ),
+
+    /* INVENTORY */
+
+    supabase
+      .from(
+        "inventory_calendar"
+      )
+      .select(`
+        room_type_id,
+        stay_date,
+        total_rooms,
+        available_rooms
+      `)
+      .eq(
+        "property_id",
+        property.id
+      )
+      .gte(
+        "stay_date",
+        startDate
+      )
+      .lt(
+        "stay_date",
+        endDate
+      ),
+
+    /* RATES */
+
+    supabase
+      .from(
+        "rate_calendar"
+      )
+      .select(`
+        room_type_id,
+        rate_plan_id,
+        stay_date,
+        price
+      `)
+      .eq(
+        "property_id",
+        property.id
+      )
+      .gte(
+        "stay_date",
+        startDate
+      )
+      .lt(
+        "stay_date",
+        endDate
+      ),
   ]);
 
   /* ======================================================
-     ERROR
+     LOG QUERY ERRORS
   ====================================================== */
 
-  if (roomsResult.error) {
+  if (
+    roomsResult.error
+  ) {
     console.error(
       "Rooms error:",
       roomsResult.error
     );
   }
 
-  if (roomTypesResult.error) {
+  if (
+    roomTypesResult.error
+  ) {
     console.error(
-      "Room types error:",
+      "Room Types error:",
       roomTypesResult.error
     );
   }
 
-  if (bookingRoomsResult.error) {
+  if (
+    bookingRoomsResult.error
+  ) {
     console.error(
-      "Booking rooms error:",
+      "Bookings error:",
       bookingRoomsResult.error
+    );
+  }
+
+  if (
+    inventoryResult.error
+  ) {
+    console.error(
+      "Inventory error:",
+      inventoryResult.error
+    );
+  }
+
+  if (
+    ratesResult.error
+  ) {
+    console.error(
+      "Rates error:",
+      ratesResult.error
     );
   }
 
@@ -234,7 +387,8 @@ export default async function StaffCalendarPage() {
   ====================================================== */
 
   const roomTypes =
-    roomTypesResult.data ?? [];
+    roomTypesResult.data ??
+    [];
 
   /* ======================================================
      ROOMS
@@ -242,30 +396,33 @@ export default async function StaffCalendarPage() {
 
   const rooms =
     (
-      roomsResult.data ?? []
-    ).map((room) => {
-      const roomType =
-        roomTypes.find(
-          (item) =>
-            item.id ===
-            room.room_type_id
-        );
+      roomsResult.data ??
+      []
+    ).map(
+      (room) => {
+        const roomType =
+          roomTypes.find(
+            (type) =>
+              type.id ===
+              room.room_type_id
+          );
 
-      return {
-        id:
-          room.id,
+        return {
+          id:
+            room.id,
 
-        room_number:
-          room.room_number,
+          room_number:
+            room.room_number,
 
-        room_type_id:
-          room.room_type_id,
+          room_type_id:
+            room.room_type_id,
 
-        roomTypeName:
-          roomType?.name ??
-          "Unknown",
-      };
-    });
+          roomTypeName:
+            roomType?.name ??
+            "Unknown",
+        };
+      }
+    );
 
   /* ======================================================
      BOOKINGS
@@ -273,130 +430,196 @@ export default async function StaffCalendarPage() {
 
   const bookings =
     (
-      bookingRoomsResult.data ?? []
-    ).map((row: any) => {
-      const booking =
-        row.bookings;
+      bookingRoomsResult.data ??
+      []
+    ).map(
+      (row: any) => {
+        const booking =
+          row.bookings;
 
-      const guest =
-        booking?.guests;
+        const guest =
+          booking?.guests;
 
-      const room =
-        rooms.find(
-          (item) =>
-            item.id ===
-            row.room_id
-        );
+        const room =
+          rooms.find(
+            (item) =>
+              item.id ===
+              row.room_id
+          );
 
-      const guestName =
-        [
-          guest?.first_name,
-          guest?.last_name,
-        ]
-          .filter(Boolean)
-          .join(" ") ||
-        "Guest";
+        const guestName =
+          [
+            guest?.first_name,
+            guest?.last_name,
+          ]
+            .filter(Boolean)
+            .join(" ") ||
+          "Guest";
 
-      return {
-        /*
-         * booking_rooms.id
-         * dùng cho drag & drop
-         */
-        id:
-          row.id,
+        return {
+          /*
+           * booking_rooms.id
+           * dùng cho drag / resize
+           */
+          id:
+            row.id,
 
-        /*
-         * bookings.id
-         * dùng cho check-in/check-out
-         */
-        bookingId:
-          booking?.id ?? "",
+          /*
+           * bookings.id
+           * dùng check-in / checkout
+           */
+          bookingId:
+            booking?.id ??
+            "",
 
-        room_id:
-          row.room_id,
+          room_id:
+            row.room_id,
 
-        roomNumber:
-          room?.room_number ??
-          "Unassigned",
+          roomNumber:
+            room?.room_number ??
+            "Unassigned",
 
-        roomTypeName:
-          room?.roomTypeName ??
-          "Unknown",
+          roomTypeName:
+            room?.roomTypeName ??
+            "Unknown",
 
-        check_in:
-          row.check_in,
+          check_in:
+            row.check_in,
 
-        check_out:
-          row.check_out,
+          check_out:
+            row.check_out,
 
-        code:
-          booking?.code ??
-          "",
+          code:
+            booking?.code ??
+            "",
 
-        guestName,
+          guestName,
 
-        phone:
-          guest?.phone ??
-          null,
+          phone:
+            guest?.phone ??
+            null,
 
-        email:
-          guest?.email ??
-          null,
+          email:
+            guest?.email ??
+            null,
 
-        source:
-          booking?.source ??
-          "direct",
+          source:
+            booking?.source ??
+            "direct",
 
-        status:
-          booking?.status ??
-          "confirmed",
+          status:
+            booking?.status ??
+            "confirmed",
 
-        totalAmount:
+          totalAmount:
+            Number(
+              booking
+                ?.total_amount ??
+              0
+            ),
+
+          currency:
+            booking?.currency ??
+            "VND",
+
+          notes:
+            booking?.notes ??
+            null,
+        };
+      }
+    );
+
+  /* ======================================================
+     INVENTORY
+  ====================================================== */
+
+  const inventory =
+    (
+      inventoryResult.data ??
+      []
+    ).map(
+      (item) => ({
+        room_type_id:
+          item.room_type_id,
+
+        stay_date:
+          item.stay_date,
+
+        total_rooms:
           Number(
-            booking
-              ?.total_amount ??
+            item.total_rooms ??
             0
           ),
 
-        currency:
-          booking?.currency ??
-          "VND",
-
-        notes:
-          booking?.notes ??
-          null,
-      };
-    });
+        available_rooms:
+          Number(
+            item.available_rooms ??
+            0
+          ),
+      })
+    );
 
   /* ======================================================
-     PAGE
+     RATES
+  ====================================================== */
+
+  const rates =
+    (
+      ratesResult.data ??
+      []
+    ).map(
+      (item) => ({
+        room_type_id:
+          item.room_type_id,
+
+        rate_plan_id:
+          item.rate_plan_id,
+
+        stay_date:
+          item.stay_date,
+
+        price:
+          Number(
+            item.price ??
+            0
+          ),
+      })
+    );
+
+  /* ======================================================
+     RENDER
   ====================================================== */
 
   return (
-    <div>
-      {/* HEADER */}
+    <div className="-m-8 bg-white">
 
-      <div className="mb-8 flex items-start justify-between gap-6">
+      {/* ==================================================
+          PAGE HEADER
+      ================================================== */}
+
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+
         <div>
-          <p className="text-sm font-semibold text-blue-600">
+
+          <p className="text-xs font-semibold text-blue-600">
             {property.code}
           </p>
 
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">
+          <h1 className="text-lg font-bold text-slate-900">
             Reservation Calendar
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="text-xs text-slate-500">
             {property.name}
           </p>
-        </div>
 
-        {/* NEW BOOKING */}
+        </div>
 
         <CreateBookingModal
           propertyId={
             property.id
           }
+
           rooms={
             rooms.map(
               (room) => ({
@@ -412,33 +635,43 @@ export default async function StaffCalendarPage() {
             )
           }
         />
+
       </div>
 
-      {/* DATE RANGE */}
+      {/* ==================================================
+          TOOLBAR
+      ================================================== */}
 
-      <div className="mb-5 flex items-center gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
-          {dates[0]}
-          {" → "}
-          {
-            dates[
-              dates.length - 1
-            ]
-          }
-        </div>
+      <div className="bg-white px-2 pt-2">
 
-        <div className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700">
-          7 days
-        </div>
+        <CalendarToolbar
+          month={month}
+        />
+
       </div>
 
-      {/* CALENDAR */}
+      {/* ==================================================
+          RESERVATION CALENDAR
+      ================================================== */}
 
       <ReservationCalendar
         dates={dates}
+
         rooms={rooms}
-        bookings={bookings}
+
+        bookings={
+          bookings
+        }
+
+        inventory={
+          inventory
+        }
+
+        rates={
+          rates
+        }
       />
+
     </div>
   );
 }

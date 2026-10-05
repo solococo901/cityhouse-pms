@@ -1,373 +1,683 @@
 "use client";
 
-import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-type RoomType = {
+/* ======================================================
+   TYPES
+====================================================== */
+
+export type InventoryCalendarRoomType = {
   id: string;
-  code: string;
   name: string;
-  totalRooms: number;
+  code: string;
+  totalRooms?: number;
 };
 
-type RatePlan = {
+export type InventoryCalendarRatePlan = {
   id: string;
-  code: string;
   name: string;
+  code: string;
 };
 
-type InventoryRow = {
+export type InventoryCalendarInventoryRow = {
   id?: string;
-  property_id: string;
+
   room_type_id: string;
+
   stay_date: string;
+
   total_rooms: number;
+
   available_rooms: number;
+
   min_stay: number;
+
   stop_sell: boolean;
 };
 
-type RateRow = {
+export type InventoryCalendarRateRow = {
   id?: string;
-  property_id: string;
+
   room_type_id: string;
+
   rate_plan_id: string;
+
   stay_date: string;
-  price: number;
+
+  price:
+    | number
+    | string;
 };
 
 type Props = {
-  propertyId: string;
   dates: string[];
-  roomTypes: RoomType[];
-  ratePlans: RatePlan[];
-  initialInventory: InventoryRow[];
-  initialRates: RateRow[];
+
+  roomTypes:
+    InventoryCalendarRoomType[];
+
+  ratePlans:
+    InventoryCalendarRatePlan[];
+
+  inventory:
+    InventoryCalendarInventoryRow[];
+
+  rates:
+    InventoryCalendarRateRow[];
 };
 
-function displayDate(date: string) {
-  const value = new Date(`${date}T00:00:00`);
+/* ======================================================
+   HELPERS
+====================================================== */
 
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(value);
+function formatWeekday(
+  date: string
+) {
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      weekday:
+        "short",
+      timeZone:
+        "UTC",
+    }
+  )
+    .format(
+      new Date(
+        `${date}T00:00:00Z`
+      )
+    )
+    .toUpperCase();
 }
 
-function displayDay(date: string) {
-  const value = new Date(`${date}T00:00:00`);
+function formatShortDate(
+  date: string
+) {
+  const value =
+    new Date(
+      `${date}T00:00:00Z`
+    );
 
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-  }).format(value);
+  const day =
+    String(
+      value.getUTCDate()
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const month =
+    String(
+      value.getUTCMonth() +
+        1
+    ).padStart(
+      2,
+      "0"
+    );
+
+  return `${day}/${month}`;
 }
+
+/* ======================================================
+   COMPONENT
+====================================================== */
 
 export default function InventoryCalendar({
-  propertyId,
   dates,
   roomTypes,
   ratePlans,
-  initialInventory,
-  initialRates,
+  inventory,
+  rates,
 }: Props) {
-  const supabase = createClient();
+  /*
+   * Đây là phần quan trọng.
+   *
+   * Component trước của bạn có thể đang:
+   *
+   * useState(inventory)
+   * useState(rates)
+   *
+   * nhưng không sync lại khi Server Component
+   * router.refresh() truyền props mới xuống.
+   */
 
-  const [inventory, setInventory] =
-    useState<InventoryRow[]>(initialInventory);
-
-  const [rates, setRates] =
-    useState<RateRow[]>(initialRates);
-
-  const [saving, setSaving] =
-    useState<string | null>(null);
-
-  const [errorMessage, setErrorMessage] =
-    useState("");
-
-  function getInventory(
-    roomType: RoomType,
-    date: string
-  ): InventoryRow {
-    return (
-      inventory.find(
-        (item) =>
-          item.room_type_id === roomType.id &&
-          item.stay_date === date
-      ) ?? {
-        property_id: propertyId,
-        room_type_id: roomType.id,
-        stay_date: date,
-        total_rooms: roomType.totalRooms,
-        available_rooms: roomType.totalRooms,
-        min_stay: 1,
-        stop_sell: false,
-      }
+  const [
+    inventoryRows,
+    setInventoryRows,
+  ] =
+    useState<
+      InventoryCalendarInventoryRow[]
+    >(
+      inventory
     );
-  }
 
-  function getRate(
+  const [
+    rateRows,
+    setRateRows,
+  ] =
+    useState<
+      InventoryCalendarRateRow[]
+    >(
+      rates
+    );
+
+  /* ======================================================
+     SYNC SERVER PROPS → CLIENT STATE
+  ====================================================== */
+
+  useEffect(() => {
+    setInventoryRows(
+      inventory
+    );
+  }, [
+    inventory,
+  ]);
+
+  useEffect(() => {
+    setRateRows(
+      rates
+    );
+  }, [
+    rates,
+  ]);
+
+  /* ======================================================
+     MAPS FOR FAST LOOKUP
+  ====================================================== */
+
+  const inventoryMap =
+    useMemo(() => {
+      const map =
+        new Map<
+          string,
+          InventoryCalendarInventoryRow
+        >();
+
+      for (
+        const row of
+          inventoryRows
+      ) {
+        map.set(
+          `${row.room_type_id}:${row.stay_date}`,
+          row
+        );
+      }
+
+      return map;
+    }, [
+      inventoryRows,
+    ]);
+
+  const rateMap =
+    useMemo(() => {
+      const map =
+        new Map<
+          string,
+          InventoryCalendarRateRow
+        >();
+
+      for (
+        const row of
+          rateRows
+      ) {
+        map.set(
+          `${row.room_type_id}:${row.rate_plan_id}:${row.stay_date}`,
+          row
+        );
+      }
+
+      return map;
+    }, [
+      rateRows,
+    ]);
+
+  /* ======================================================
+     LOCAL INVENTORY UPDATE
+  ====================================================== */
+
+  function updateInventoryLocal(
     roomTypeId: string,
-    ratePlanId: string,
-    date: string
-  ): RateRow {
-    return (
-      rates.find(
-        (item) =>
-          item.room_type_id === roomTypeId &&
-          item.rate_plan_id === ratePlanId &&
-          item.stay_date === date
-      ) ?? {
-        property_id: propertyId,
-        room_type_id: roomTypeId,
-        rate_plan_id: ratePlanId,
-        stay_date: date,
-        price: 0,
-      }
-    );
-  }
-
-  function updateInventoryState(
-    roomType: RoomType,
-    date: string,
-    patch: Partial<InventoryRow>
+    stayDate: string,
+    field:
+      | "available_rooms"
+      | "min_stay"
+      | "stop_sell",
+    value:
+      | number
+      | boolean
   ) {
-    setInventory((current) => {
-      const existing = current.find(
-        (item) =>
-          item.room_type_id === roomType.id &&
-          item.stay_date === date
-      );
+    setInventoryRows(
+      (
+        current
+      ) =>
+        current.map(
+          (
+            row
+          ) => {
+            if (
+              row.room_type_id ===
+                roomTypeId &&
+              row.stay_date ===
+                stayDate
+            ) {
+              return {
+                ...row,
 
-      if (!existing) {
-        return [
-          ...current,
-          {
-            property_id: propertyId,
-            room_type_id: roomType.id,
-            stay_date: date,
-            total_rooms: roomType.totalRooms,
-            available_rooms: roomType.totalRooms,
-            min_stay: 1,
-            stop_sell: false,
-            ...patch,
-          },
-        ];
-      }
-
-      return current.map((item) =>
-        item.room_type_id === roomType.id &&
-        item.stay_date === date
-          ? {
-              ...item,
-              ...patch,
+                [field]:
+                  value,
+              };
             }
-          : item
-      );
-    });
-  }
 
-  async function saveInventory(
-    roomType: RoomType,
-    date: string,
-    patch: Partial<InventoryRow>
-  ) {
-    setErrorMessage("");
-
-    const current = getInventory(
-      roomType,
-      date
+            return row;
+          }
+        )
     );
-
-    const payload = {
-      property_id: propertyId,
-      room_type_id: roomType.id,
-      stay_date: date,
-
-      total_rooms: roomType.totalRooms,
-
-      available_rooms:
-        patch.available_rooms ??
-        current.available_rooms,
-
-      min_stay:
-        patch.min_stay ??
-        current.min_stay,
-
-      stop_sell:
-        patch.stop_sell ??
-        current.stop_sell,
-    };
-
-    const key =
-      `${roomType.id}-${date}-inventory`;
-
-    setSaving(key);
-
-    const { error } = await supabase
-      .from("inventory_calendar")
-      .upsert(
-        payload,
-        {
-          onConflict:
-            "room_type_id,stay_date",
-        }
-      );
-
-    if (error) {
-      setErrorMessage(error.message);
-    }
-
-    setSaving(null);
   }
 
-  function updateRateState(
+  /* ======================================================
+     LOCAL RATE UPDATE
+  ====================================================== */
+
+  function updateRateLocal(
     roomTypeId: string,
     ratePlanId: string,
-    date: string,
-    price: number
+    stayDate: string,
+    value: number
   ) {
-    setRates((current) => {
-      const existing = current.find(
-        (item) =>
-          item.room_type_id === roomTypeId &&
-          item.rate_plan_id === ratePlanId &&
-          item.stay_date === date
-      );
-
-      if (!existing) {
-        return [
-          ...current,
-          {
-            property_id: propertyId,
-            room_type_id: roomTypeId,
-            rate_plan_id: ratePlanId,
-            stay_date: date,
-            price,
-          },
-        ];
-      }
-
-      return current.map((item) =>
-        item.room_type_id === roomTypeId &&
-        item.rate_plan_id === ratePlanId &&
-        item.stay_date === date
-          ? {
-              ...item,
-              price,
+    setRateRows(
+      (
+        current
+      ) =>
+        current.map(
+          (
+            row
+          ) => {
+            if (
+              row.room_type_id ===
+                roomTypeId &&
+              row.rate_plan_id ===
+                ratePlanId &&
+              row.stay_date ===
+                stayDate
+            ) {
+              return {
+                ...row,
+                price:
+                  value,
+              };
             }
-          : item
-      );
-    });
-  }
 
-  async function saveRate(
-    roomTypeId: string,
-    ratePlanId: string,
-    date: string
-  ) {
-    setErrorMessage("");
-
-    const rate = getRate(
-      roomTypeId,
-      ratePlanId,
-      date
+            return row;
+          }
+        )
     );
-
-    const key =
-      `${roomTypeId}-${ratePlanId}-${date}`;
-
-    setSaving(key);
-
-    const { error } = await supabase
-      .from("rate_calendar")
-      .upsert(
-        {
-          property_id: propertyId,
-          room_type_id: roomTypeId,
-          rate_plan_id: ratePlanId,
-          stay_date: date,
-          price: rate.price,
-        },
-        {
-          onConflict:
-            "room_type_id,rate_plan_id,stay_date",
-        }
-      );
-
-    if (error) {
-      setErrorMessage(error.message);
-    }
-
-    setSaving(null);
   }
+
+  /* ======================================================
+     RENDER
+  ====================================================== */
 
   return (
-    <div>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
 
-      {errorMessage && (
-        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {errorMessage}
-        </div>
-      )}
+      <div className="overflow-x-auto">
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <div className="min-w-max">
 
-        <table className="min-w-[1400px] border-collapse text-sm">
+          {/* ==================================================
+              DATE HEADER
+          ================================================== */}
 
-          <thead>
+          <div className="flex border-b border-slate-200 bg-slate-50">
 
-            <tr className="border-b bg-slate-50">
+            <div className="sticky left-0 z-30 flex w-[170px] shrink-0 items-center border-r border-slate-200 bg-slate-50 px-4 py-3">
 
-              <th className="sticky left-0 z-20 min-w-[220px] bg-slate-50 px-5 py-4 text-left font-semibold text-slate-600">
+              <span className="text-xs font-semibold text-slate-600">
                 Room / Rate
-              </th>
+              </span>
 
-              {dates.map((date) => (
+            </div>
 
-                <th
-                  key={date}
-                  className="min-w-[105px] border-l border-slate-200 px-3 py-3 text-center"
+            {dates.map(
+              (
+                date
+              ) => (
+
+                <div
+                  key={
+                    date
+                  }
+                  className="w-[110px] shrink-0 border-r border-slate-200 px-2 py-2 text-center"
                 >
 
-                  <div className="text-xs font-medium uppercase text-slate-400">
-                    {displayDay(date)}
+                  <p className="text-[10px] font-medium text-slate-400">
+                    {
+                      formatWeekday(
+                        date
+                      )
+                    }
+                  </p>
+
+                  <p className="mt-1 text-xs font-bold text-slate-800">
+                    {
+                      formatShortDate(
+                        date
+                      )
+                    }
+                  </p>
+
+                </div>
+
+              )
+            )}
+
+          </div>
+
+          {/* ==================================================
+              ROOM TYPES
+          ================================================== */}
+
+          {roomTypes.map(
+            (
+              roomType
+            ) => (
+
+              <div
+                key={
+                  roomType.id
+                }
+              >
+
+                {/* ==========================================
+                    ROOM TYPE HEADER
+                ========================================== */}
+
+                <div className="flex bg-slate-900">
+
+                  <div className="sticky left-0 z-20 flex w-[170px] shrink-0 items-center bg-slate-900 px-4 py-2">
+
+                    <span className="text-xs font-bold text-white">
+                      {
+                        roomType.name
+                      }
+                    </span>
+
+                    <span className="ml-2 text-[10px] text-slate-400">
+                      {
+                        roomType.code
+                      }
+
+                      {roomType.totalRooms !==
+                        undefined && (
+                        <>
+                          {" · "}
+                          {
+                            roomType.totalRooms
+                          }{" "}
+                          rooms
+                        </>
+                      )}
+                    </span>
+
                   </div>
 
-                  <div className="mt-1 font-semibold text-slate-800">
-                    {displayDate(date)}
+                  <div
+                    style={{
+                      width:
+                        dates.length *
+                        110,
+                    }}
+                    className="shrink-0 bg-slate-900"
+                  />
+
+                </div>
+
+                {/* ==========================================
+                    AVAILABLE
+                ========================================== */}
+
+                <InventoryNumberRow
+                  label="Available"
+
+                  dates={
+                    dates
+                  }
+
+                  getValue={(
+                    date
+                  ) =>
+                    inventoryMap.get(
+                      `${roomType.id}:${date}`
+                    )
+                      ?.available_rooms ??
+                    0
+                  }
+
+                  onChange={(
+                    date,
+                    value
+                  ) =>
+                    updateInventoryLocal(
+                      roomType.id,
+                      date,
+                      "available_rooms",
+                      value
+                    )
+                  }
+                />
+
+                {/* ==========================================
+                    MIN STAY
+                ========================================== */}
+
+                <InventoryNumberRow
+                  label="Min Stay"
+
+                  muted
+
+                  dates={
+                    dates
+                  }
+
+                  getValue={(
+                    date
+                  ) =>
+                    inventoryMap.get(
+                      `${roomType.id}:${date}`
+                    )
+                      ?.min_stay ??
+                    1
+                  }
+
+                  onChange={(
+                    date,
+                    value
+                  ) =>
+                    updateInventoryLocal(
+                      roomType.id,
+                      date,
+                      "min_stay",
+                      value
+                    )
+                  }
+                />
+
+                {/* ==========================================
+                    STOP SELL
+                ========================================== */}
+
+                <div className="flex min-h-[44px] border-b border-slate-200">
+
+                  <div className="sticky left-0 z-20 flex w-[170px] shrink-0 items-center border-r border-slate-200 bg-white px-4">
+
+                    <span className="text-xs text-slate-500">
+                      Stop Sell
+                    </span>
+
                   </div>
 
-                </th>
+                  {dates.map(
+                    (
+                      date
+                    ) => {
+                      const row =
+                        inventoryMap.get(
+                          `${roomType.id}:${date}`
+                        );
 
-              ))}
+                      const checked =
+                        row
+                          ?.stop_sell ??
+                        false;
 
-            </tr>
+                      return (
 
-          </thead>
+                        <div
+                          key={
+                            date
+                          }
+                          className="flex w-[110px] shrink-0 items-center justify-center border-r border-slate-100"
+                        >
 
-          <tbody>
+                          <input
+                            type="checkbox"
+                            checked={
+                              checked
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateInventoryLocal(
+                                roomType.id,
+                                date,
+                                "stop_sell",
+                                event
+                                  .target
+                                  .checked
+                              )
+                            }
+                            className="h-4 w-4 cursor-pointer rounded border-slate-300"
+                          />
 
-            {roomTypes.map((roomType) => (
+                        </div>
 
-              <RoomTypeSection
-                key={roomType.id}
-                roomType={roomType}
-                dates={dates}
-                ratePlans={ratePlans}
-                getInventory={getInventory}
-                getRate={getRate}
-                updateInventoryState={updateInventoryState}
-                saveInventory={saveInventory}
-                updateRateState={updateRateState}
-                saveRate={saveRate}
-                saving={saving}
-              />
+                      );
+                    }
+                  )}
 
-            ))}
+                </div>
 
-          </tbody>
+                {/* ==========================================
+                    RATE PLANS
+                ========================================== */}
 
-        </table>
+                {ratePlans.map(
+                  (
+                    ratePlan
+                  ) => (
+
+                    <div
+                      key={
+                        `${roomType.id}-${ratePlan.id}`
+                      }
+                      className="flex min-h-[58px] border-b border-slate-200"
+                    >
+
+                      {/* RATE PLAN NAME */}
+
+                      <div className="sticky left-0 z-20 flex w-[170px] shrink-0 items-center border-r border-slate-200 bg-white px-4">
+
+                        <div>
+
+                          <p className="text-xs font-semibold text-slate-700">
+                            {
+                              ratePlan.name
+                            }
+                          </p>
+
+                          <p className="mt-0.5 text-[10px] text-slate-400">
+                            Price
+                          </p>
+
+                        </div>
+
+                      </div>
+
+                      {/* RATE CELLS */}
+
+                      {dates.map(
+                        (
+                          date
+                        ) => {
+                          const key =
+                            `${roomType.id}:${ratePlan.id}:${date}`;
+
+                          const row =
+                            rateMap.get(
+                              key
+                            );
+
+                          const price =
+                            Number(
+                              row
+                                ?.price ??
+                              0
+                            );
+
+                          return (
+
+                            <div
+                              key={
+                                date
+                              }
+                              className="flex w-[110px] shrink-0 items-center border-r border-slate-100 px-1.5"
+                            >
+
+                              <input
+                                type="number"
+                                min="0"
+                                step="10000"
+                                value={
+                                  price
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateRateLocal(
+                                    roomType.id,
+                                    ratePlan.id,
+                                    date,
+                                    Number(
+                                      event
+                                        .target
+                                        .value ||
+                                        0
+                                    )
+                                  )
+                                }
+                                className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-center text-[11px] text-slate-700 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+                              />
+
+                            </div>
+
+                          );
+                        }
+                      )}
+
+                    </div>
+
+                  )
+                )}
+
+              </div>
+
+            )
+          )}
+
+        </div>
 
       </div>
 
@@ -375,279 +685,99 @@ export default function InventoryCalendar({
   );
 }
 
-function RoomTypeSection({
-  roomType,
+/* ======================================================
+   NUMBER ROW
+====================================================== */
+
+function InventoryNumberRow({
+  label,
   dates,
-  ratePlans,
-  getInventory,
-  getRate,
-  updateInventoryState,
-  saveInventory,
-  updateRateState,
-  saveRate,
-  saving,
-}: any) {
+  getValue,
+  onChange,
+  muted = false,
+}: {
+  label: string;
+
+  dates: string[];
+
+  getValue: (
+    date: string
+  ) => number;
+
+  onChange: (
+    date: string,
+    value: number
+  ) => void;
+
+  muted?: boolean;
+}) {
   return (
-    <>
+    <div className="flex min-h-[44px] border-b border-slate-200">
 
-      <tr className="border-b bg-slate-900">
+      {/* LABEL */}
 
-        <td
-          colSpan={dates.length + 1}
-          className="px-5 py-3 font-semibold text-white"
+      <div className="sticky left-0 z-20 flex w-[170px] shrink-0 items-center border-r border-slate-200 bg-white px-4">
+
+        <span
+          className={`text-xs ${
+            muted
+              ? "text-slate-400"
+              : "font-medium text-slate-600"
+          }`}
         >
-          {roomType.name}
+          {label}
+        </span>
 
-          <span className="ml-3 text-xs font-normal text-slate-400">
-            {roomType.code}
-            {" · "}
-            {roomType.totalRooms} rooms
-          </span>
-        </td>
+      </div>
 
-      </tr>
+      {/* CELLS */}
 
+      {dates.map(
+        (
+          date
+        ) => (
 
-      {/* AVAILABLE */}
+          <div
+            key={
+              date
+            }
+            className="flex w-[110px] shrink-0 items-center border-r border-slate-100 px-1.5"
+          >
 
-      <tr className="border-b">
-
-        <td className="sticky left-0 z-10 bg-white px-5 py-3 font-medium text-slate-700">
-          Available
-        </td>
-
-        {dates.map((date: string) => {
-          const row =
-            getInventory(roomType, date);
-
-          return (
-            <td
-              key={date}
-              className="border-l border-slate-100 p-2"
-            >
-
-              <input
-                type="number"
-                min={0}
-                max={roomType.totalRooms}
-                value={row.available_rooms}
-                onChange={(e) => {
-                  updateInventoryState(
-                    roomType,
-                    date,
-                    {
-                      available_rooms:
-                        Number(e.target.value),
-                    }
-                  );
-                }}
-                onBlur={() =>
-                  saveInventory(
-                    roomType,
-                    date,
-                    {
-                      available_rooms:
-                        getInventory(
-                          roomType,
-                          date
-                        ).available_rooms,
-                    }
+            <input
+              type="number"
+              min={
+                label ===
+                "Min Stay"
+                  ? 1
+                  : 0
+              }
+              value={
+                getValue(
+                  date
+                )
+              }
+              onChange={(
+                event
+              ) =>
+                onChange(
+                  date,
+                  Number(
+                    event
+                      .target
+                      .value ||
+                      0
                   )
-                }
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-center font-semibold outline-none focus:border-blue-500"
-              />
+                )
+              }
+              className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-center text-[11px] text-slate-700 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+            />
 
-            </td>
-          );
-        })}
+          </div>
 
-      </tr>
+        )
+      )}
 
-
-      {/* MIN STAY */}
-
-      <tr className="border-b">
-
-        <td className="sticky left-0 z-10 bg-white px-5 py-3 text-slate-500">
-          Min Stay
-        </td>
-
-        {dates.map((date: string) => {
-          const row =
-            getInventory(roomType, date);
-
-          return (
-            <td
-              key={date}
-              className="border-l border-slate-100 p-2"
-            >
-
-              <input
-                type="number"
-                min={1}
-                value={row.min_stay}
-                onChange={(e) => {
-                  updateInventoryState(
-                    roomType,
-                    date,
-                    {
-                      min_stay:
-                        Number(e.target.value),
-                    }
-                  );
-                }}
-                onBlur={() =>
-                  saveInventory(
-                    roomType,
-                    date,
-                    {
-                      min_stay:
-                        getInventory(
-                          roomType,
-                          date
-                        ).min_stay,
-                    }
-                  )
-                }
-                className="w-full rounded-lg border border-slate-200 px-2 py-2 text-center outline-none focus:border-blue-500"
-              />
-
-            </td>
-          );
-        })}
-
-      </tr>
-
-
-      {/* STOP SELL */}
-
-      <tr className="border-b bg-slate-50/50">
-
-        <td className="sticky left-0 z-10 bg-slate-50 px-5 py-3 text-slate-500">
-          Stop Sell
-        </td>
-
-        {dates.map((date: string) => {
-          const row =
-            getInventory(roomType, date);
-
-          return (
-            <td
-              key={date}
-              className="border-l border-slate-100 text-center"
-            >
-
-              <input
-                type="checkbox"
-                checked={row.stop_sell}
-                onChange={async (e) => {
-                  const value =
-                    e.target.checked;
-
-                  updateInventoryState(
-                    roomType,
-                    date,
-                    {
-                      stop_sell: value,
-                    }
-                  );
-
-                  await saveInventory(
-                    roomType,
-                    date,
-                    {
-                      stop_sell: value,
-                    }
-                  );
-                }}
-              />
-
-            </td>
-          );
-        })}
-
-      </tr>
-
-
-      {/* RATE PLANS */}
-
-      {ratePlans.map((ratePlan: RatePlan) => (
-
-        <tr
-          key={ratePlan.id}
-          className="border-b"
-        >
-
-          <td className="sticky left-0 z-10 bg-white px-5 py-3">
-
-            <p className="font-medium text-slate-700">
-              {ratePlan.name}
-            </p>
-
-            <p className="text-xs text-slate-400">
-              Price
-            </p>
-
-          </td>
-
-          {dates.map((date: string) => {
-            const rate =
-              getRate(
-                roomType.id,
-                ratePlan.id,
-                date
-              );
-
-            const key =
-              `${roomType.id}-${ratePlan.id}-${date}`;
-
-            return (
-              <td
-                key={date}
-                className="border-l border-slate-100 p-2"
-              >
-
-                <div className="relative">
-
-                  <input
-                    type="number"
-                    min={0}
-                    step={10000}
-                    value={rate.price}
-                    onChange={(e) => {
-                      updateRateState(
-                        roomType.id,
-                        ratePlan.id,
-                        date,
-                        Number(e.target.value)
-                      );
-                    }}
-                    onBlur={() =>
-                      saveRate(
-                        roomType.id,
-                        ratePlan.id,
-                        date
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-200 px-2 py-2 text-center text-xs outline-none focus:border-blue-500"
-                  />
-
-                  {saving === key && (
-                    <div className="absolute -bottom-4 left-0 right-0 text-center text-[9px] text-blue-500">
-                      saving
-                    </div>
-                  )}
-
-                </div>
-
-              </td>
-            );
-          })}
-
-        </tr>
-
-      ))}
-
-    </>
+    </div>
   );
 }

@@ -1,25 +1,57 @@
 import InventoryCalendar from "@/components/admin/inventory-calendar";
-import { createClient } from "@/lib/supabase/server";
+import GenerateCalendarData from "@/components/admin/generate-calendar-data";
+import BulkAriUpdate from "@/components/admin/bulk-ari-update";
+
+import {
+  createClient,
+} from "@/lib/supabase/server";
+
+/* ======================================================
+   NEXT.JS
+
+   Trang này dùng dữ liệu Supabase theo request.
+   Không prerender bằng Instant Navigation.
+====================================================== */
+
+export const instant = false;
+
+/* ======================================================
+   DATE HELPERS
+====================================================== */
 
 function getVietnamToday() {
-  const parts = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone: "Asia/Ho_Chi_Minh",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }
-  ).formatToParts(new Date());
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Ho_Chi_Minh",
+
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
 
   const year =
-    parts.find((p) => p.type === "year")?.value;
+    parts.find(
+      (part) =>
+        part.type === "year"
+    )?.value ?? "";
 
   const month =
-    parts.find((p) => p.type === "month")?.value;
+    parts.find(
+      (part) =>
+        part.type === "month"
+    )?.value ?? "";
 
   const day =
-    parts.find((p) => p.type === "day")?.value;
+    parts.find(
+      (part) =>
+        part.type === "day"
+    )?.value ?? "";
 
   return `${year}-${month}-${day}`;
 }
@@ -29,10 +61,13 @@ function addDays(
   amount: number
 ) {
   const value =
-    new Date(`${date}T00:00:00Z`);
+    new Date(
+      `${date}T00:00:00Z`
+    );
 
   value.setUTCDate(
-    value.getUTCDate() + amount
+    value.getUTCDate() +
+      amount
   );
 
   return value
@@ -40,36 +75,72 @@ function addDays(
     .slice(0, 10);
 }
 
+/* ======================================================
+   PAGE
+====================================================== */
+
 export default async function InventoryPage() {
   const supabase =
     await createClient();
 
-  const { data: property } =
+  /* ======================================================
+     PROPERTY
+  ====================================================== */
+
+  const {
+    data: property,
+    error: propertyError,
+  } =
     await supabase
-      .from("properties")
+      .from(
+        "properties"
+      )
       .select(`
         id,
         code,
         name
       `)
-      .eq("active", true)
-      .order("name")
+      .eq(
+        "active",
+        true
+      )
+      .order(
+        "name"
+      )
       .limit(1)
       .maybeSingle();
 
-  if (!property) {
+  if (
+    propertyError
+  ) {
+    console.error(
+      "Property error:",
+      propertyError
+    );
+  }
+
+  if (
+    !property
+  ) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold">
+      <div className="mx-auto max-w-full">
+
+        <h1 className="text-2xl font-bold text-slate-900">
           Inventory
         </h1>
 
-        <p className="mt-3 text-slate-500">
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-700">
           Chưa có property.
-        </p>
+        </div>
+
       </div>
     );
   }
+
+  /* ======================================================
+     DATE RANGE
+     14 DAYS
+  ====================================================== */
 
   const startDate =
     getVietnamToday();
@@ -79,7 +150,10 @@ export default async function InventoryPage() {
       {
         length: 14,
       },
-      (_, index) =>
+      (
+        _,
+        index
+      ) =>
         addDays(
           startDate,
           index
@@ -87,7 +161,13 @@ export default async function InventoryPage() {
     );
 
   const endDate =
-    dates[dates.length - 1];
+    dates[
+      dates.length - 1
+    ];
+
+  /* ======================================================
+     LOAD DATA
+  ====================================================== */
 
   const [
     roomTypesResult,
@@ -95,108 +175,366 @@ export default async function InventoryPage() {
     ratePlansResult,
     inventoryResult,
     ratesResult,
-  ] = await Promise.all([
+  ] =
+    await Promise.all([
+      /* ==================================================
+         ROOM TYPES
+      ================================================== */
 
-    supabase
-      .from("room_types")
-      .select(`
-        id,
-        code,
-        name
-      `)
-      .eq(
-        "property_id",
-        property.id
-      )
-      .eq("active", true)
-      .order("name"),
+      supabase
+        .from(
+          "room_types"
+        )
+        .select(`
+          id,
+          code,
+          name
+        `)
+        .eq(
+          "property_id",
+          property.id
+        )
+        .eq(
+          "active",
+          true
+        )
+        .order(
+          "name"
+        ),
 
-    supabase
-      .from("rooms")
-      .select(`
-        id,
-        room_type_id
-      `)
-      .eq(
-        "property_id",
-        property.id
-      )
-      .eq("active", true),
+      /* ==================================================
+         ROOMS
+      ================================================== */
 
-    supabase
-      .from("rate_plans")
-      .select(`
-        id,
-        code,
-        name
-      `)
-      .eq(
-        "property_id",
-        property.id
-      )
-      .eq("active", true)
-      .order("name"),
+      supabase
+        .from(
+          "rooms"
+        )
+        .select(`
+          id,
+          room_number,
+          room_type_id,
+          status,
+          active
+        `)
+        .eq(
+          "property_id",
+          property.id
+        )
+        .eq(
+          "active",
+          true
+        )
+        .order(
+          "room_number"
+        ),
 
-    supabase
-      .from("inventory_calendar")
-      .select("*")
-      .eq(
-        "property_id",
-        property.id
-      )
-      .gte(
-        "stay_date",
-        startDate
-      )
-      .lte(
-        "stay_date",
-        endDate
-      ),
+      /* ==================================================
+         RATE PLANS
+      ================================================== */
 
-    supabase
-      .from("rate_calendar")
-      .select("*")
-      .eq(
-        "property_id",
-        property.id
-      )
-      .gte(
-        "stay_date",
-        startDate
-      )
-      .lte(
-        "stay_date",
-        endDate
-      ),
+      supabase
+        .from(
+          "rate_plans"
+        )
+        .select(`
+          id,
+          code,
+          name
+        `)
+        .eq(
+          "property_id",
+          property.id
+        )
+        .eq(
+          "active",
+          true
+        )
+        .order(
+          "name"
+        ),
 
-  ]);
+      /* ==================================================
+         INVENTORY
+      ================================================== */
+
+      supabase
+        .from(
+          "inventory_calendar"
+        )
+        .select(`
+          id,
+          room_type_id,
+          stay_date,
+          total_rooms,
+          available_rooms,
+          min_stay,
+          stop_sell
+        `)
+        .eq(
+          "property_id",
+          property.id
+        )
+        .gte(
+          "stay_date",
+          startDate
+        )
+        .lte(
+          "stay_date",
+          endDate
+        )
+        .order(
+          "stay_date"
+        ),
+
+      /* ==================================================
+         RATES
+      ================================================== */
+
+      supabase
+        .from(
+          "rate_calendar"
+        )
+        .select(`
+          id,
+          room_type_id,
+          rate_plan_id,
+          stay_date,
+          price
+        `)
+        .eq(
+          "property_id",
+          property.id
+        )
+        .gte(
+          "stay_date",
+          startDate
+        )
+        .lte(
+          "stay_date",
+          endDate
+        )
+        .order(
+          "stay_date"
+        ),
+    ]);
+
+  /* ======================================================
+     ERRORS
+  ====================================================== */
+
+  if (
+    roomTypesResult.error
+  ) {
+    console.error(
+      "Room types error:",
+      roomTypesResult.error
+    );
+  }
+
+  if (
+    roomsResult.error
+  ) {
+    console.error(
+      "Rooms error:",
+      roomsResult.error
+    );
+  }
+
+  if (
+    ratePlansResult.error
+  ) {
+    console.error(
+      "Rate plans error:",
+      ratePlansResult.error
+    );
+  }
+
+  if (
+    inventoryResult.error
+  ) {
+    console.error(
+      "Inventory error:",
+      inventoryResult.error
+    );
+  }
+
+  if (
+    ratesResult.error
+  ) {
+    console.error(
+      "Rates error:",
+      ratesResult.error
+    );
+  }
+
+  /* ======================================================
+     RAW DATA
+  ====================================================== */
+
+  const rawRoomTypes =
+    roomTypesResult.data ??
+    [];
+
+  const rawRooms =
+    roomsResult.data ??
+    [];
+
+  const rawRatePlans =
+    ratePlansResult.data ??
+    [];
+
+  /* ======================================================
+     ROOM TYPES
+  ====================================================== */
 
   const roomTypes =
-    (roomTypesResult.data ?? [])
-      .map((roomType) => {
-
+    rawRoomTypes.map(
+      (
+        roomType
+      ) => {
         const totalRooms =
-          (
-            roomsResult.data ?? []
-          ).filter(
-            (room) =>
+          rawRooms.filter(
+            (
+              room
+            ) =>
               room.room_type_id ===
               roomType.id
           ).length;
 
         return {
-          ...roomType,
+          id:
+            roomType.id,
+
+          code:
+            roomType.code,
+
+          name:
+            roomType.name,
+
           totalRooms,
         };
-      });
+      }
+    );
+
+  /* ======================================================
+     RATE PLANS
+  ====================================================== */
+
+  const ratePlans =
+    rawRatePlans.map(
+      (
+        ratePlan
+      ) => ({
+        id:
+          ratePlan.id,
+
+        code:
+          ratePlan.code,
+
+        name:
+          ratePlan.name,
+      })
+    );
+
+  /* ======================================================
+     INVENTORY
+
+     Chuẩn hóa dữ liệu trước khi truyền
+     sang Client Component.
+  ====================================================== */
+
+  const inventory =
+    (
+      inventoryResult.data ??
+      []
+    ).map(
+      (
+        item
+      ) => ({
+        id:
+          item.id,
+
+        room_type_id:
+          item.room_type_id,
+
+        stay_date:
+          item.stay_date,
+
+        total_rooms:
+          Number(
+            item.total_rooms ??
+            0
+          ),
+
+        available_rooms:
+          Number(
+            item.available_rooms ??
+            0
+          ),
+
+        min_stay:
+          Number(
+            item.min_stay ??
+            1
+          ),
+
+        stop_sell:
+          Boolean(
+            item.stop_sell
+          ),
+      })
+    );
+
+  /* ======================================================
+     RATES
+  ====================================================== */
+
+  const rates =
+    (
+      ratesResult.data ??
+      []
+    ).map(
+      (
+        item
+      ) => ({
+        id:
+          item.id,
+
+        room_type_id:
+          item.room_type_id,
+
+        rate_plan_id:
+          item.rate_plan_id,
+
+        stay_date:
+          item.stay_date,
+
+        price:
+          Number(
+            item.price ??
+            0
+          ),
+      })
+    );
+
+  /* ======================================================
+     RENDER
+  ====================================================== */
 
   return (
     <div className="mx-auto max-w-full">
 
+      {/* ==================================================
+          HEADER
+      ================================================== */}
+
       <div className="mb-8">
 
         <p className="text-sm font-semibold text-blue-600">
-          {property.code}
+          {
+            property.code
+          }
         </p>
 
         <h1 className="mt-1 text-2xl font-bold text-slate-900">
@@ -204,19 +542,34 @@ export default async function InventoryPage() {
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          {property.name}
+          {
+            property.name
+          }
         </p>
 
       </div>
 
-      <div className="mb-5 flex items-center gap-3">
+      {/* ==================================================
+          CURRENT RANGE
+      ================================================== */}
 
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm">
-          {dates[0]}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
+
+          {
+            dates[0]
+          }
+
           {" → "}
-          {dates[
-            dates.length - 1
-          ]}
+
+          {
+            dates[
+              dates.length -
+                1
+            ]
+          }
+
         </div>
 
         <div className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700">
@@ -225,23 +578,88 @@ export default async function InventoryPage() {
 
       </div>
 
+      {/* ==================================================
+          GENERATE CALENDAR DATA
+      ================================================== */}
+
+      <div className="mb-6">
+
+        <GenerateCalendarData
+          propertyId={
+            property.id
+          }
+        />
+
+      </div>
+
+      {/* ==================================================
+          BULK UPDATE
+      ================================================== */}
+
+      <div className="mb-6">
+
+        <BulkAriUpdate
+          propertyId={
+            property.id
+          }
+
+          roomTypes={
+            roomTypes.map(
+              (
+                item
+              ) => ({
+                id:
+                  item.id,
+
+                name:
+                  item.name,
+              })
+            )
+          }
+
+          ratePlans={
+            ratePlans.map(
+              (
+                item
+              ) => ({
+                id:
+                  item.id,
+
+                name:
+                  item.name,
+
+                code:
+                  item.code,
+              })
+            )
+          }
+        />
+
+      </div>
+
+      {/* ==================================================
+          INVENTORY CALENDAR
+      ================================================== */}
+
       <InventoryCalendar
-        propertyId={
-          property.id
+        dates={
+          dates
         }
-        dates={dates}
-        roomTypes={roomTypes}
+
+        roomTypes={
+          roomTypes
+        }
+
         ratePlans={
-          ratePlansResult.data ??
-          []
+          ratePlans
         }
-        initialInventory={
-          inventoryResult.data ??
-          []
+
+        inventory={
+          inventory
         }
-        initialRates={
-          ratesResult.data ??
-          []
+
+        rates={
+          rates
         }
       />
 
