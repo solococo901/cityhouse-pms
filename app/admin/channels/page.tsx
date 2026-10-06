@@ -1,6 +1,8 @@
+import ChannexAriPreviewCard from "@/components/admin/channex-ari-preview-card";
 import ChannexConnectionCard from "@/components/admin/channex-connection-card";
 import ChannexMappingCard from "@/components/admin/channex-mapping-card";
-import ChannexAriPreviewCard from "@/components/admin/channex-ari-preview-card";
+import ChannexSyncHistoryCard from "@/components/admin/channex-sync-history-card";
+import ChannexAriQueueCard from "@/components/admin/channex-ari-queue-card";
 
 import {
   createClient,
@@ -8,8 +10,6 @@ import {
 
 /* ======================================================
    NEXT.JS
-
-   Trang Channels đọc dữ liệu Supabase theo request.
 ====================================================== */
 
 export const instant =
@@ -28,8 +28,11 @@ export default async function ChannelsPage() {
   ====================================================== */
 
   const {
-    data: property,
-    error: propertyError,
+    data:
+    property,
+
+    error:
+    propertyError,
   } =
     await supabase
       .from(
@@ -47,7 +50,9 @@ export default async function ChannelsPage() {
       .order(
         "name"
       )
-      .limit(1)
+      .limit(
+        1
+      )
       .maybeSingle();
 
   if (
@@ -74,8 +79,11 @@ export default async function ChannelsPage() {
   ====================================================== */
 
   const {
-    data: connection,
-    error: connectionError,
+    data:
+    connection,
+
+    error:
+    connectionError,
   } =
     await supabase
       .from(
@@ -123,8 +131,11 @@ export default async function ChannelsPage() {
   ====================================================== */
 
   const {
-    data: roomTypesData,
-    error: roomTypesError,
+    data:
+    roomTypesData,
+
+    error:
+    roomTypesError,
   } =
     await supabase
       .from(
@@ -161,8 +172,11 @@ export default async function ChannelsPage() {
   ====================================================== */
 
   const {
-    data: ratePlansData,
-    error: ratePlansError,
+    data:
+    ratePlansData,
+
+    error:
+    ratePlansError,
   } =
     await supabase
       .from(
@@ -213,22 +227,22 @@ export default async function ChannelsPage() {
   let existingRoomMappings:
     {
       room_type_id:
-        string;
+      string;
 
       channex_room_type_id:
-        string;
+      string;
     }[] = [];
 
   let existingRateMappings:
     {
       room_type_id:
-        string;
+      string;
 
       rate_plan_id:
-        string;
+      string;
 
       channex_rate_plan_id:
-        string;
+      string;
     }[] = [];
 
   if (
@@ -239,7 +253,7 @@ export default async function ChannelsPage() {
       rateMappingsResult,
     ] =
       await Promise.all([
-        /* ROOM TYPE MAPPINGS */
+        /* ROOM MAPPINGS */
 
         supabase
           .from(
@@ -254,7 +268,7 @@ export default async function ChannelsPage() {
             connection.id
           ),
 
-        /* RATE PLAN MAPPINGS */
+        /* RATE MAPPINGS */
 
         supabase
           .from(
@@ -299,27 +313,21 @@ export default async function ChannelsPage() {
   }
 
   /* ======================================================
-     CONNECTION STATUS
+     PROPERTY MAPPED
   ====================================================== */
 
   const propertyMapped =
     Boolean(
       connection &&
-        connection
-          .channex_property_id &&
-        connection
-          .connection_status ===
-          "connected"
+      connection
+        .channex_property_id &&
+      connection
+        .connection_status ===
+      "connected"
     );
 
   /* ======================================================
      ROOM MAPPING COMPLETENESS
-
-     Ví dụ:
-     Studio
-     Deluxe
-
-     => cần 2 Room Type mappings.
   ====================================================== */
 
   const activeRoomIds =
@@ -340,7 +348,8 @@ export default async function ChannelsPage() {
             mapping
           ) =>
             activeRoomIds.has(
-              mapping.room_type_id
+              mapping
+                .room_type_id
             ) &&
             Boolean(
               mapping
@@ -351,44 +360,47 @@ export default async function ChannelsPage() {
           (
             mapping
           ) =>
-            mapping.room_type_id
+            mapping
+              .room_type_id
         )
     );
 
   const roomsMappingComplete =
     roomTypes.length >
-      0 &&
+    0 &&
     mappedRoomIds.size ===
-      roomTypes.length;
+    roomTypes.length;
 
   /* ======================================================
-     RATE MAPPING COMPLETENESS
+     EXPECTED RATE MAPPINGS
 
-     Ví dụ:
+     Room Type × Rate Plan.
 
-     2 Room Types
-     ×
-     2 Rate Plans
-
-     = 4 mappings cần có.
+     2 rooms × 2 rate plans = 4.
   ====================================================== */
 
   const expectedRateMappingKeys =
-    new Set<string>();
+    new Set<
+      string
+    >();
 
   for (
     const room of
-      roomTypes
+    roomTypes
   ) {
     for (
       const rate of
-        ratePlans
+      ratePlans
     ) {
       expectedRateMappingKeys.add(
         `${room.id}:${rate.id}`
       );
     }
   }
+
+  /* ======================================================
+     EXISTING RATE MAPPING KEYS
+  ====================================================== */
 
   const existingRateMappingKeys =
     new Set(
@@ -410,14 +422,18 @@ export default async function ChannelsPage() {
         )
     );
 
+  /* ======================================================
+     RATE MAPPING COMPLETENESS
+  ====================================================== */
+
   let ratesMappingComplete =
     expectedRateMappingKeys
       .size >
-      0;
+    0;
 
   for (
     const key of
-      expectedRateMappingKeys
+    expectedRateMappingKeys
   ) {
     if (
       !existingRateMappingKeys.has(
@@ -451,7 +467,8 @@ export default async function ChannelsPage() {
     mappedRoomIds.size;
 
   const expectedRateMappings =
-    expectedRateMappingKeys.size;
+    expectedRateMappingKeys
+      .size;
 
   const actualRateMappings =
     Array.from(
@@ -512,33 +529,31 @@ export default async function ChannelsPage() {
         existingConnection={
           connection
             ? {
-                id:
-                  connection.id,
+              id:
+                connection.id,
 
-                channexPropertyId:
-                  connection
-                    .channex_property_id,
+              channexPropertyId:
+                connection
+                  .channex_property_id,
 
-                status:
-                  connection
-                    .connection_status,
+              status:
+                connection
+                  .connection_status,
 
-                lastTestedAt:
-                  connection
-                    .last_tested_at,
+              lastTestedAt:
+                connection
+                  .last_tested_at,
 
-                lastError:
-                  connection
-                    .last_error,
-              }
+              lastError:
+                connection
+                  .last_error,
+            }
             : null
         }
       />
 
       {/* ==================================================
           ROOM + RATE MAPPING
-
-          Chỉ hiện khi Property đã map.
       ================================================== */}
 
       {propertyMapped && (
@@ -569,8 +584,6 @@ export default async function ChannelsPage() {
 
       {/* ==================================================
           MAPPING STATUS
-
-          Hiển thị để debug / kiểm tra trước ARI.
       ================================================== */}
 
       {propertyMapped && (
@@ -591,12 +604,12 @@ export default async function ChannelsPage() {
 
             </div>
 
+
             <div
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                mappingComplete
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${mappingComplete
                   ? "bg-green-50 text-green-700"
                   : "bg-amber-50 text-amber-700"
-              }`}
+                }`}
             >
 
               {mappingComplete
@@ -610,7 +623,7 @@ export default async function ChannelsPage() {
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
 
-            {/* ROOM TYPES */}
+            {/* ROOM TYPE */}
 
             <div className="rounded-xl bg-slate-50 p-4">
 
@@ -619,25 +632,27 @@ export default async function ChannelsPage() {
               </p>
 
               <p
-                className={`mt-2 text-lg font-bold ${
-                  roomsMappingComplete
+                className={`mt-2 text-lg font-bold ${roomsMappingComplete
                     ? "text-green-700"
                     : "text-amber-700"
-                }`}
+                  }`}
               >
+
                 {
                   actualRoomMappings
                 }
+
                 /
+
                 {
                   expectedRoomMappings
                 }
+
               </p>
 
             </div>
 
-
-            {/* RATE PLANS */}
+            {/* RATE PLAN */}
 
             <div className="rounded-xl bg-slate-50 p-4">
 
@@ -646,19 +661,22 @@ export default async function ChannelsPage() {
               </p>
 
               <p
-                className={`mt-2 text-lg font-bold ${
-                  ratesMappingComplete
+                className={`mt-2 text-lg font-bold ${ratesMappingComplete
                     ? "text-green-700"
                     : "text-amber-700"
-                }`}
+                  }`}
               >
+
                 {
                   actualRateMappings
                 }
+
                 /
+
                 {
                   expectedRateMappings
                 }
+
               </p>
 
             </div>
@@ -670,53 +688,59 @@ export default async function ChannelsPage() {
       )}
 
       {/* ==================================================
-          ARI PREVIEW
-
-          CHỈ xuất hiện khi:
-
-          Property mapped
-          Room mapping complete
-          Rate mapping complete
+          ARI + HISTORY
       ================================================== */}
 
       {mappingComplete && (
+        <>
+          <ChannexAriPreviewCard
+            propertyId={
+              property.id
+            }
+          />
 
-        <ChannexAriPreviewCard
-          propertyId={
-            property.id
-          }
-        />
+          <ChannexAriQueueCard
+            propertyId={
+              property.id
+            }
+          />
 
+          <ChannexSyncHistoryCard
+            propertyId={
+              property.id
+            }
+          />
+        </>
       )}
 
       {/* ==================================================
-          WAITING MESSAGE
+          WAITING
       ================================================== */}
 
       {propertyMapped &&
         !mappingComplete && (
 
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
 
-          <p className="font-semibold text-amber-800">
-            ARI Preview chưa khả dụng
-          </p>
+            <p className="font-semibold text-amber-800">
+              ARI Preview chưa khả dụng
+            </p>
 
-          <p className="mt-1 text-sm leading-6 text-amber-700">
+            <p className="mt-1 text-sm leading-6 text-amber-700">
 
-            Hoàn tất toàn bộ Room Type và Rate Plan mapping rồi bấm
-            {" "}
-            <strong>
-              Save Mapping
-            </strong>
-            .
-            Sau đó ARI Preview sẽ tự xuất hiện.
+              Hoàn tất toàn bộ Room Type và Rate Plan mapping rồi bấm{" "}
 
-          </p>
+              <strong>
+                Save Mapping
+              </strong>
 
-        </div>
+              . Sau đó ARI Preview sẽ tự xuất hiện.
 
-      )}
+            </p>
+
+          </div>
+
+        )}
 
     </div>
   );

@@ -67,7 +67,7 @@ function addDays(
 
   value.setUTCDate(
     value.getUTCDate() +
-      amount
+    amount
   );
 
   return value
@@ -162,7 +162,7 @@ export default async function InventoryPage() {
 
   const endDate =
     dates[
-      dates.length - 1
+    dates.length - 1
     ];
 
   /* ======================================================
@@ -565,8 +565,8 @@ export default async function InventoryPage() {
 
           {
             dates[
-              dates.length -
-                1
+            dates.length -
+            1
             ]
           }
 
@@ -642,6 +642,10 @@ export default async function InventoryPage() {
       ================================================== */}
 
       <InventoryCalendar
+        propertyId={
+          property.id
+        }
+
         dates={
           dates
         }

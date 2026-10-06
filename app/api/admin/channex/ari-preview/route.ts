@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
 import {
   createClient,
@@ -21,15 +23,18 @@ type RateMapping = {
 
 type InventoryRow = {
   room_type_id: string;
+
   stay_date: string;
 
   available_rooms:
     | number
-    | string;
+    | string
+    | null;
 
   min_stay:
     | number
-    | string;
+    | string
+    | null;
 
   stop_sell:
     | boolean
@@ -38,28 +43,39 @@ type InventoryRow = {
 
 type RateRow = {
   room_type_id: string;
+
   rate_plan_id: string;
+
   stay_date: string;
 
   price:
     | number
-    | string;
+    | string
+    | null;
 };
 
-type ChannexProperty = {
-  id?: string;
+type Issue = {
+  code: string;
 
-  attributes?: {
-    title?: string;
-    name?: string;
+  type:
+    | "error"
+    | "warning";
 
-    currency?: string;
-    timezone?: string;
-  };
+  message: string;
+};
+
+type RatePlanCurrencyCheck = {
+  id: string;
+
+  title: string;
+
+  currency: string;
+
+  ok: boolean;
 };
 
 /* ======================================================
-   DATE HELPERS
+   HELPERS
 ====================================================== */
 
 function validDate(
@@ -91,6 +107,18 @@ function dateDiff(
     ) /
       86400000
   );
+}
+
+function parseJson(
+  text: string
+) {
+  try {
+    return JSON.parse(
+      text
+    );
+  } catch {
+    return null;
+  }
 }
 
 /* ======================================================
@@ -193,7 +221,8 @@ export async function GET(
       );
 
     if (
-      rangeDays < 0
+      rangeDays <
+      0
     ) {
       return NextResponse.json(
         {
@@ -220,6 +249,10 @@ export async function GET(
         }
       );
     }
+
+    const totalDays =
+      rangeDays +
+      1;
 
     /* ==================================================
        ACCESS
@@ -254,6 +287,56 @@ export async function GET(
     }
 
     /* ==================================================
+       CHANNEX CONFIG
+    ================================================== */
+
+    const baseUrl =
+      (
+        process.env
+          .CHANNEX_BASE_URL ||
+        "https://staging.channex.io"
+      ).replace(
+        /\/+$/,
+        ""
+      );
+
+    const apiKey =
+      process.env
+        .CHANNEX_API_KEY;
+
+    const environment =
+      baseUrl.includes(
+        "staging"
+      )
+        ? "staging"
+        : "production";
+
+    const pmsCurrency =
+      process.env
+        .PMS_CURRENCY ||
+      "VND";
+
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "Server chưa cấu hình CHANNEX_API_KEY.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    const channexHeaders = {
+      Accept:
+        "application/json",
+
+      "user-api-key":
+        apiKey,
+    };
+
+    /* ==================================================
        CONNECTION
     ================================================== */
 
@@ -281,6 +364,10 @@ export async function GET(
           "channex"
         )
         .eq(
+          "environment",
+          environment
+        )
+        .eq(
           "active",
           true
         )
@@ -302,7 +389,8 @@ export async function GET(
     }
 
     if (
-      connection.connection_status !==
+      connection
+        .connection_status !==
         "connected" ||
       !connection
         .channex_property_id
@@ -474,7 +562,9 @@ export async function GET(
       inventoryResult.error ||
       ratesResult.error;
 
-    if (firstError) {
+    if (
+      firstError
+    ) {
       return NextResponse.json(
         {
           error:
@@ -614,81 +704,55 @@ export async function GET(
     }
 
     /* ==================================================
-       CHANNEX PROPERTY INFO
+       ISSUES
     ================================================== */
 
-    const baseUrl =
-      (
-        process.env
-          .CHANNEX_BASE_URL ||
-        "https://staging.channex.io"
-      ).replace(
-        /\/+$/,
-        ""
-      );
+    const issues:
+      Issue[] =
+      [];
 
-    const apiKey =
-      process.env
-        .CHANNEX_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Server chưa cấu hình CHANNEX_API_KEY.",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
+    /* ==================================================
+       CHANNEX PROPERTY
+    ================================================== */
 
     const propertyResponse =
       await fetch(
-        `${baseUrl}/api/v1/properties/`,
+        `${baseUrl}/api/v1/properties/${connection.channex_property_id}`,
         {
-          headers: {
-            Accept:
-              "application/json",
-
-            "user-api-key":
-              apiKey,
-          },
+          headers:
+            channexHeaders,
 
           cache:
             "no-store",
         }
       );
 
-    let channexProperty:
-      ChannexProperty |
-      null = null;
+    const propertyText =
+      await propertyResponse.text();
+
+    const propertyResult =
+      parseJson(
+        propertyText
+      );
 
     if (
-      propertyResponse.ok
+      !propertyResponse.ok
     ) {
-      const result =
-        await propertyResponse.json();
-
-      const properties:
-        ChannexProperty[] =
-        Array.isArray(
-          result?.data
-        )
-          ? result.data
-          : [];
-
-      channexProperty =
-        properties.find(
-          (
-            item
-          ) =>
-            item.id ===
-            connection
-              .channex_property_id
-        ) ??
-        null;
+      return NextResponse.json(
+        {
+          error:
+            `Không thể đọc Channex Property (${propertyResponse.status}).`,
+        },
+        {
+          status: 400,
+        }
+      );
     }
+
+    const channexProperty =
+      propertyResult
+        ?.data ??
+      null;
 
     const channexCurrency =
       channexProperty
@@ -696,10 +760,156 @@ export async function GET(
         ?.currency ??
       "UNKNOWN";
 
-    const pmsCurrency =
-      process.env
-        .PMS_CURRENCY ||
-      "VND";
+    if (
+      channexCurrency !==
+      pmsCurrency
+    ) {
+      issues.push({
+        code:
+          "PROPERTY_CURRENCY_MISMATCH",
+
+        type:
+          "error",
+
+        message:
+          `Currency Property không khớp: PMS = ${pmsCurrency}, Channex Property = ${channexCurrency}.`,
+      });
+    }
+
+    /* ==================================================
+       CHANNEX RATE PLAN CURRENCY CHECK
+
+       Property VND chưa đủ.
+       Tất cả mapped Rate Plans cũng phải VND.
+    ================================================== */
+
+    const uniqueRatePlanIds =
+      Array.from(
+        new Set(
+          rateMappings
+            .map(
+              (
+                item
+              ) =>
+                item
+                  .channex_rate_plan_id
+            )
+            .filter(
+              (
+                value
+              ): value is string =>
+                Boolean(
+                  value
+                )
+            )
+        )
+      );
+
+    const ratePlanCurrencyChecks:
+      RatePlanCurrencyCheck[] =
+      await Promise.all(
+        uniqueRatePlanIds.map(
+          async (
+            ratePlanId
+          ) => {
+            try {
+              const response =
+                await fetch(
+                  `${baseUrl}/api/v1/rate_plans/${ratePlanId}`,
+                  {
+                    headers:
+                      channexHeaders,
+
+                    cache:
+                      "no-store",
+                  }
+                );
+
+              const text =
+                await response.text();
+
+              const result =
+                parseJson(
+                  text
+                );
+
+              return {
+                id:
+                  ratePlanId,
+
+                title:
+                  result
+                    ?.data
+                    ?.attributes
+                    ?.title ??
+                  ratePlanId,
+
+                currency:
+                  result
+                    ?.data
+                    ?.attributes
+                    ?.currency ??
+                  "UNKNOWN",
+
+                ok:
+                  response.ok,
+              };
+            } catch {
+              return {
+                id:
+                  ratePlanId,
+
+                title:
+                  ratePlanId,
+
+                currency:
+                  "UNKNOWN",
+
+                ok:
+                  false,
+              };
+            }
+          }
+        )
+      );
+
+    for (
+      const ratePlan of
+        ratePlanCurrencyChecks
+    ) {
+      if (
+        !ratePlan.ok
+      ) {
+        issues.push({
+          code:
+            "RATE_PLAN_CHECK_FAILED",
+
+          type:
+            "error",
+
+          message:
+            `Không thể đọc Channex Rate Plan "${ratePlan.title}" (${ratePlan.id}).`,
+        });
+
+        continue;
+      }
+
+      if (
+        ratePlan.currency !==
+        pmsCurrency
+      ) {
+        issues.push({
+          code:
+            "RATE_PLAN_CURRENCY_MISMATCH",
+
+          type:
+            "error",
+
+          message:
+            `Rate Plan "${ratePlan.title}" đang dùng ${ratePlan.currency}, PMS yêu cầu ${pmsCurrency}.`,
+        });
+      }
+    }
 
     /* ==================================================
        INVENTORY LOOKUP
@@ -741,6 +951,12 @@ export async function GET(
             return [];
           }
 
+          const availability =
+            Number(
+              item.available_rooms ??
+              0
+            );
+
           return [
             {
               property_id:
@@ -756,10 +972,7 @@ export async function GET(
               availability:
                 Math.max(
                   0,
-                  Number(
-                    item.available_rooms ??
-                    0
-                  )
+                  availability
                 ),
             },
           ];
@@ -768,15 +981,6 @@ export async function GET(
 
     /* ==================================================
        RESTRICTIONS PAYLOAD
-
-       PMS min_stay:
-       gửi sang min_stay_arrival.
-
-       stop_sell:
-       copy từ inventory_calendar.
-
-       rate:
-       gửi dạng string để tránh floating point.
     ================================================== */
 
     const restrictionValues =
@@ -830,9 +1034,11 @@ export async function GET(
 
             rate:
               String(
-                Number(
-                  item.price ??
-                  0
+                Math.round(
+                  Number(
+                    item.price ??
+                    0
+                  )
                 )
               ),
           };
@@ -864,48 +1070,104 @@ export async function GET(
       );
 
     /* ==================================================
-       VALIDATION ISSUES
+       EXPECTED ROW COUNTS
     ================================================== */
 
-    const issues:
-      {
-        code: string;
-        type:
-          | "error"
-          | "warning";
-        message: string;
-      }[] = [];
+    const expectedAvailability =
+      roomTypes.length *
+      totalDays;
 
-    /* CURRENCY */
+    const expectedRestrictions =
+      roomTypes.length *
+      ratePlans.length *
+      totalDays;
 
     if (
-      channexCurrency !==
-      "UNKNOWN" &&
-      channexCurrency !==
-      pmsCurrency
+      availabilityValues.length !==
+      expectedAvailability
     ) {
       issues.push({
         code:
-          "CURRENCY_MISMATCH",
+          "INCOMPLETE_AVAILABILITY",
 
         type:
           "error",
 
         message:
-          `Currency không khớp: PMS = ${pmsCurrency}, Channex = ${channexCurrency}. Không được Sync giá trước khi sửa.`,
+          `Availability chưa đủ. Có ${availabilityValues.length}/${expectedAvailability} rows cho ${roomTypes.length} Room Types × ${totalDays} ngày.`,
       });
     }
 
-    /* ZERO / INVALID RATE */
+    if (
+      restrictionValues.length !==
+      expectedRestrictions
+    ) {
+      issues.push({
+        code:
+          "INCOMPLETE_RATES",
+
+        type:
+          "error",
+
+        message:
+          `Rate data chưa đủ. Có ${restrictionValues.length}/${expectedRestrictions} rows cho ${roomTypes.length} Room Types × ${ratePlans.length} Rate Plans × ${totalDays} ngày.`,
+      });
+    }
+
+    /* ==================================================
+       INVALID AVAILABILITY
+    ================================================== */
+
+    const invalidAvailability =
+      availabilityValues.filter(
+        (
+          item
+        ) =>
+          !Number.isInteger(
+            item.availability
+          ) ||
+          item.availability <
+            0
+      );
+
+    if (
+      invalidAvailability.length >
+      0
+    ) {
+      issues.push({
+        code:
+          "INVALID_AVAILABILITY",
+
+        type:
+          "error",
+
+        message:
+          `${invalidAvailability.length} Availability rows không hợp lệ.`,
+      });
+    }
+
+    /* ==================================================
+       ZERO / INVALID RATE
+    ================================================== */
 
     const invalidRates =
       restrictionValues.filter(
         (
           item
-        ) =>
-          Number(
-            item.rate
-          ) <= 0
+        ) => {
+          const rate =
+            Number(
+              item.rate
+            );
+
+          return (
+            !Number.isFinite(
+              rate
+            ) ||
+            rate <=
+              0
+          );
+        }
       );
 
     if (
@@ -920,11 +1182,13 @@ export async function GET(
           "error",
 
         message:
-          `${invalidRates.length} rate rows có giá <= 0. Channex yêu cầu rate lớn hơn 0.`,
+          `${invalidRates.length} rate rows có giá <= 0 hoặc không hợp lệ.`,
       });
     }
 
-    /* MISSING INVENTORY */
+    /* ==================================================
+       EMPTY DATA
+    ================================================== */
 
     if (
       availabilityValues.length ===
@@ -942,8 +1206,6 @@ export async function GET(
       });
     }
 
-    /* MISSING RATES */
-
     if (
       restrictionValues.length ===
       0
@@ -959,6 +1221,10 @@ export async function GET(
           "Không có Rate data trong khoảng ngày đã chọn.",
       });
     }
+
+    /* ==================================================
+       READY
+    ================================================== */
 
     const ready =
       !issues.some(
@@ -983,7 +1249,7 @@ export async function GET(
         endDate,
 
         days:
-          rangeDays + 1,
+          totalDays,
       },
 
       property: {
@@ -1019,6 +1285,14 @@ export async function GET(
           rateMappings.length,
       },
 
+      expected: {
+        availability:
+          expectedAvailability,
+
+        restrictions:
+          expectedRestrictions,
+      },
+
       counts: {
         availability:
           availabilityValues.length,
@@ -1026,6 +1300,9 @@ export async function GET(
         restrictions:
           restrictionValues.length,
       },
+
+      ratePlanCurrencies:
+        ratePlanCurrencyChecks,
 
       issues,
 
@@ -1039,7 +1316,9 @@ export async function GET(
           restrictionValues,
       },
     });
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
       "ARI preview:",
       error
@@ -1048,7 +1327,10 @@ export async function GET(
     return NextResponse.json(
       {
         error:
-          "Không thể tạo ARI Preview.",
+          error instanceof
+          Error
+            ? error.message
+            : "Không thể tạo ARI Preview.",
       },
       {
         status: 500,
