@@ -6,6 +6,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -28,6 +29,11 @@ const menu = [
     name: "Calendar",
     href: "/staff/calendar",
     icon: CalendarDays,
+  },
+  {
+    name: "Housekeeping",
+    href: "/staff/housekeeping",
+    icon: Sparkles,
   },
 ];
 

@@ -49,10 +49,10 @@ export async function POST(
       await request.json();
 
 
-    const bookingId =
-      typeof body.bookingId ===
+    const roomId =
+      typeof body.roomId ===
         "string"
-        ? body.bookingId.trim()
+        ? body.roomId.trim()
         : "";
 
 
@@ -71,14 +71,14 @@ export async function POST(
 
 
     if (
-      !bookingId ||
+      !roomId ||
       !status
     ) {
 
       return NextResponse.json(
         {
           error:
-            "Missing bookingId or status",
+            "Missing roomId or status",
         },
         {
           status: 400,
@@ -93,10 +93,10 @@ export async function POST(
       error,
     } =
       await supabase.rpc(
-        "transition_booking_status",
+        "transition_room_status",
         {
-          p_booking_id:
-            bookingId,
+          p_room_id:
+            roomId,
 
           p_status:
             status,
@@ -112,7 +112,7 @@ export async function POST(
 
       const rawMessage =
         error.message ||
-        "Không thể cập nhật booking.";
+        "Không thể cập nhật trạng thái phòng.";
 
 
       let message =
@@ -130,116 +130,67 @@ export async function POST(
       ) {
 
         message =
-          "Bạn không có quyền thao tác booking này.";
+          "Bạn không có quyền thao tác phòng này.";
 
         httpStatus =
           403;
 
       } else if (
         rawMessage.includes(
-          "BOOKING_NOT_FOUND"
+          "ROOM_NOT_FOUND"
         )
       ) {
 
         message =
-          "Không tìm thấy booking.";
+          "Không tìm thấy phòng.";
 
         httpStatus =
           404;
 
       } else if (
         rawMessage.includes(
-          "BOOKING_ROOM_NOT_ASSIGNED"
+          "ROOM_INACTIVE"
         )
       ) {
 
         message =
-          "Booking chưa được gán đầy đủ phòng vật lý. Không thể CHECK IN.";
+          "Phòng đang inactive.";
 
         httpStatus =
           409;
 
       } else if (
         rawMessage.includes(
-          "BOOKING_ROOM_INACTIVE"
+          "ROOM_HAS_IN_HOUSE_GUEST"
         )
       ) {
 
         message =
-          "Phòng được gán cho booking đang inactive. Không thể CHECK IN.";
+          "Phòng đang có khách checked-in, không thể đổi trạng thái Housekeeping.";
 
         httpStatus =
           409;
 
       } else if (
         rawMessage.includes(
-          "ROOM_NOT_READY_FOR_CHECKIN"
+          "INVALID_ROOM_STATUS_TRANSITION"
         )
       ) {
 
-        const detail =
-          rawMessage
-            .split(
-              "ROOM_NOT_READY_FOR_CHECKIN:"
-            )[1]
-            ?.trim();
-
-
         message =
-          detail
-            ? `Phòng chưa sẵn sàng để CHECK IN: ${detail}`
-            : "Phòng chưa sẵn sàng để CHECK IN.";
+          "Trạng thái phòng hiện tại không cho phép thao tác này.";
 
         httpStatus =
           409;
 
       } else if (
         rawMessage.includes(
-          "FUTURE_CHECKIN_NOT_ALLOWED"
+          "INVALID_HOUSEKEEPING_TARGET_STATUS"
         )
       ) {
 
         message =
-          "Chưa đến ngày check-in. Không thể CHECK IN booking này.";
-
-        httpStatus =
-          409;
-
-      } else if (
-        rawMessage.includes(
-          "FUTURE_CHECKIN_NO_SHOW_NOT_ALLOWED"
-        )
-      ) {
-
-        message =
-          "Chưa đến ngày check-in. Không thể đánh dấu No-show.";
-
-        httpStatus =
-          409;
-
-      } else if (
-        rawMessage.includes(
-          "BOOKING_STATUS_LOCKED"
-        ) ||
-        rawMessage.includes(
-          "INVALID_STATUS_TRANSITION"
-        )
-      ) {
-
-        message =
-          "Trạng thái booking hiện tại không cho phép thao tác này.";
-
-        httpStatus =
-          409;
-
-      } else if (
-        rawMessage.includes(
-          "INVALID_STATUS"
-        )
-      ) {
-
-        message =
-          "Trạng thái booking không hợp lệ.";
+          "Trạng thái Housekeeping không hợp lệ.";
 
         httpStatus =
           400;
@@ -277,7 +228,7 @@ export async function POST(
   ) {
 
     console.error(
-      "Booking status update:",
+      "Room status update:",
       error
     );
 
@@ -285,7 +236,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "Không thể cập nhật booking.",
+          "Không thể cập nhật trạng thái phòng.",
       },
       {
         status: 500,

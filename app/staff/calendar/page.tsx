@@ -4,22 +4,37 @@ import CalendarToolbar from "@/components/staff/calendar-toolbar";
 
 import { createClient } from "@/lib/supabase/server";
 
+export const instant = false;
+
 /* ======================================================
    DATE HELPERS
 ====================================================== */
 
 function currentVietnamMonth() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "Asia/Ho_Chi_Minh",
+        year: "numeric",
+        month: "2-digit",
+      }
+    ).formatToParts(
+      new Date()
+    );
 
   const year =
-    parts.find((item) => item.type === "year")?.value ?? "";
+    parts.find(
+      (item) =>
+        item.type === "year"
+    )?.value ?? "";
 
   const month =
-    parts.find((item) => item.type === "month")?.value ?? "";
+    parts.find(
+      (item) =>
+        item.type === "month"
+    )?.value ?? "";
 
   return `${year}-${month}`;
 }
@@ -28,12 +43,14 @@ function addDays(
   date: string,
   amount: number
 ) {
-  const value = new Date(
-    `${date}T00:00:00Z`
-  );
+  const value =
+    new Date(
+      `${date}T00:00:00Z`
+    );
 
   value.setUTCDate(
-    value.getUTCDate() + amount
+    value.getUTCDate() +
+      amount
   );
 
   return value
@@ -177,6 +194,7 @@ export default async function StaffCalendarPage({
   const [
     roomsResult,
     roomTypesResult,
+    ratePlansResult,
     bookingRoomsResult,
     inventoryResult,
     ratesResult,
@@ -213,6 +231,28 @@ export default async function StaffCalendarPage({
         id,
         name,
         code
+      `)
+      .eq(
+        "property_id",
+        property.id
+      )
+      .eq(
+        "active",
+        true
+      )
+      .order(
+        "name"
+      ),
+
+    /* RATE PLANS FOR CREATE BOOKING MODAL */
+
+    supabase
+      .from("rate_plans")
+      .select(`
+        id,
+        name,
+        code,
+        active
       `)
       .eq(
         "property_id",
@@ -356,6 +396,15 @@ export default async function StaffCalendarPage({
   }
 
   if (
+    ratePlansResult.error
+  ) {
+    console.error(
+      "Rate Plans error:",
+      ratePlansResult.error
+    );
+  }
+
+  if (
     bookingRoomsResult.error
   ) {
     console.error(
@@ -423,6 +472,57 @@ export default async function StaffCalendarPage({
         };
       }
     );
+
+  /* ======================================================
+     RATE PLANS
+
+     Keep Website rate first when it exists.
+  ====================================================== */
+
+  const ratePlans =
+    (
+      ratePlansResult.data ??
+      []
+    )
+      .map(
+        (ratePlan) => ({
+          id:
+            ratePlan.id,
+
+          name:
+            ratePlan.name,
+
+          code:
+            ratePlan.code,
+        })
+      )
+      .sort(
+        (a, b) => {
+          const aPriority =
+            a.code === "WEBSITE"
+              ? 0
+              : 1;
+
+          const bPriority =
+            b.code === "WEBSITE"
+              ? 0
+              : 1;
+
+          if (
+            aPriority !==
+            bPriority
+          ) {
+            return (
+              aPriority -
+              bPriority
+            );
+          }
+
+          return a.name.localeCompare(
+            b.name
+          );
+        }
+      );
 
   /* ======================================================
      BOOKINGS
@@ -515,7 +615,7 @@ export default async function StaffCalendarPage({
             Number(
               booking
                 ?.total_amount ??
-              0
+                0
             ),
 
           currency:
@@ -548,13 +648,13 @@ export default async function StaffCalendarPage({
         total_rooms:
           Number(
             item.total_rooms ??
-            0
+              0
           ),
 
         available_rooms:
           Number(
             item.available_rooms ??
-            0
+              0
           ),
       })
     );
@@ -581,7 +681,7 @@ export default async function StaffCalendarPage({
         price:
           Number(
             item.price ??
-            0
+              0
           ),
       })
     );
@@ -592,15 +692,12 @@ export default async function StaffCalendarPage({
 
   return (
     <div className="-m-8 bg-white">
-
       {/* ==================================================
           PAGE HEADER
       ================================================== */}
 
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
-
         <div>
-
           <p className="text-xs font-semibold text-blue-600">
             {property.code}
           </p>
@@ -612,30 +709,17 @@ export default async function StaffCalendarPage({
           <p className="text-xs text-slate-500">
             {property.name}
           </p>
-
         </div>
 
         <CreateBookingModal
           propertyId={
             property.id
           }
-
-          rooms={
-            rooms.map(
-              (room) => ({
-                id:
-                  room.id,
-
-                room_number:
-                  room.room_number,
-
-                roomTypeName:
-                  room.roomTypeName,
-              })
-            )
+          rooms={rooms}
+          ratePlans={
+            ratePlans
           }
         />
-
       </div>
 
       {/* ==================================================
@@ -643,11 +727,9 @@ export default async function StaffCalendarPage({
       ================================================== */}
 
       <div className="bg-white px-2 pt-2">
-
         <CalendarToolbar
           month={month}
         />
-
       </div>
 
       {/* ==================================================
@@ -656,22 +738,11 @@ export default async function StaffCalendarPage({
 
       <ReservationCalendar
         dates={dates}
-
         rooms={rooms}
-
-        bookings={
-          bookings
-        }
-
-        inventory={
-          inventory
-        }
-
-        rates={
-          rates
-        }
+        bookings={bookings}
+        inventory={inventory}
+        rates={rates}
       />
-
     </div>
   );
 }

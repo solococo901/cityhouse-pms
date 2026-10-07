@@ -7,18 +7,16 @@ import {
 } from "@/lib/channex/process-ari-queue-server";
 
 import {
+  processRoomBlockLifecycle,
+} from "@/lib/maintenance/process-room-block-lifecycle-server";
+
+import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
 /* ======================================================
    CONFIG
 ====================================================== */
-
-export const dynamic =
-  "force-dynamic";
-
-export const runtime =
-  "nodejs";
 
 /* ======================================================
    AUTH
@@ -27,9 +25,11 @@ export const runtime =
 function isAuthorized(
   request: Request
 ) {
+
   const cronSecret =
     process.env
       .CRON_SECRET;
+
 
   if (
     !cronSecret
@@ -37,10 +37,12 @@ function isAuthorized(
     return false;
   }
 
+
   const authorization =
     request.headers.get(
       "authorization"
     );
+
 
   if (
     authorization ===
@@ -49,15 +51,18 @@ function isAuthorized(
     return true;
   }
 
+
   const headerSecret =
     request.headers.get(
       "x-cron-secret"
     );
 
+
   return (
     headerSecret ===
     cronSecret
   );
+
 }
 
 /* ======================================================
@@ -67,7 +72,9 @@ function isAuthorized(
 async function run(
   request: Request
 ) {
+
   try {
+
     /* ==================================================
        SECURITY
     ================================================== */
@@ -77,6 +84,7 @@ async function run(
         request
       )
     ) {
+
       return NextResponse.json(
         {
           error:
@@ -86,10 +94,71 @@ async function run(
           status: 401,
         }
       );
+
     }
+
 
     const supabase =
       createAdminClient();
+
+
+    /* ==================================================
+       ROOM BLOCK LIFECYCLE
+
+       Chạy độc lập với Channex connection.
+
+       Vì vậy lifecycle phải chạy TRƯỚC đoạn kiểm tra
+       "không có Channex Property connected".
+
+       Worker này chỉ cập nhật trạng thái phòng vật lý:
+       - scheduled active block -> out_of_order
+       - expired block -> released
+       - out_of_order -> dirty
+
+       KHÔNG thay đổi inventory và KHÔNG gọi Channex.
+    ================================================== */
+
+    let roomBlocks:
+      Awaited<
+        ReturnType<
+          typeof processRoomBlockLifecycle
+        >
+      >;
+
+
+    try {
+
+      roomBlocks =
+        await processRoomBlockLifecycle();
+
+    } catch (
+      lifecycleError
+    ) {
+
+      console.error(
+        "Room Block Lifecycle Cron:",
+        lifecycleError
+      );
+
+
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          error:
+            lifecycleError instanceof
+            Error
+              ? lifecycleError.message
+              : "Room block lifecycle failed.",
+        },
+        {
+          status: 500,
+        }
+      );
+
+    }
+
 
     /* ==================================================
        ENVIRONMENT
@@ -105,12 +174,14 @@ async function run(
         ""
       );
 
+
     const environment =
       baseUrl.includes(
         "staging"
       )
         ? "staging"
         : "production";
+
 
     /* ==================================================
        ACTIVE CONNECTIONS
@@ -147,11 +218,18 @@ async function run(
           true
         );
 
+
     if (
       connectionError
     ) {
+
       return NextResponse.json(
         {
+          success:
+            false,
+
+          roomBlocks,
+
           error:
             connectionError.message,
         },
@@ -159,7 +237,9 @@ async function run(
           status: 500,
         }
       );
+
     }
+
 
     /* ==================================================
        UNIQUE PROPERTY IDS
@@ -189,15 +269,19 @@ async function run(
         )
       );
 
+
     if (
       propertyIds.length ===
       0
     ) {
+
       return NextResponse.json({
         success:
           true,
 
         environment,
+
+        roomBlocks,
 
         properties:
           0,
@@ -205,10 +289,24 @@ async function run(
         processed:
           0,
 
+        availability:
+          0,
+
+        restrictions:
+          0,
+
+        errors:
+          0,
+
+        results:
+          [],
+
         message:
-          "Không có Channex Property đang connected.",
+          "Room block lifecycle đã chạy. Không có Channex Property đang connected.",
       });
+
     }
+
 
     /* ==================================================
        PROCESS EACH PROPERTY
@@ -218,20 +316,25 @@ async function run(
 
     const results = [];
 
+
     for (
       const propertyId of
         propertyIds
     ) {
+
       const result =
         await processAriQueueForProperty(
           propertyId,
           100
         );
 
+
       results.push(
         result
       );
+
     }
+
 
     /* ==================================================
        SUMMARY
@@ -248,6 +351,7 @@ async function run(
         0
       );
 
+
     const availability =
       results.reduce(
         (
@@ -258,6 +362,7 @@ async function run(
           item.availability,
         0
       );
+
 
     const restrictions =
       results.reduce(
@@ -270,6 +375,7 @@ async function run(
         0
       );
 
+
     const errors =
       results.filter(
         (
@@ -279,12 +385,15 @@ async function run(
           "error"
       );
 
+
     return NextResponse.json({
       success:
         errors.length ===
         0,
 
       environment,
+
+      roomBlocks,
 
       properties:
         propertyIds.length,
@@ -300,13 +409,16 @@ async function run(
 
       results,
     });
+
   } catch (
     error
   ) {
+
     console.error(
       "Channex ARI Cron:",
       error
     );
+
 
     return NextResponse.json(
       {
@@ -320,7 +432,9 @@ async function run(
         status: 500,
       }
     );
+
   }
+
 }
 
 /* ======================================================
@@ -330,15 +444,20 @@ async function run(
 export async function GET(
   request: Request
 ) {
+
   return run(
     request
   );
+
 }
+
 
 export async function POST(
   request: Request
 ) {
+
   return run(
     request
   );
+
 }

@@ -7,6 +7,27 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
+  /* ======================================================
+     CRON ROUTES
+
+     Cron routes use their own CRON_SECRET authentication
+     inside the route handler.
+
+     Do not force Supabase user-session authentication here,
+     otherwise external/server cron requests will be redirected
+     to /auth/login before reaching the API route.
+  ====================================================== */
+
+  const pathname = request.nextUrl.pathname;
+
+  const isCronRoute =
+    pathname === "/api/cron" ||
+    pathname.startsWith("/api/cron/");
+
+  if (isCronRoute) {
+    return supabaseResponse;
+  }
+
   // If the env vars are not set, skip proxy check. You can remove this
   // once you setup the project.
   if (!hasEnvVars) {
