@@ -128,10 +128,11 @@ function parseJson(
 export async function GET(
   request: Request
 ) {
-  try {
+ 
     const supabase =
       await createClient();
 
+       try {
     /* ==================================================
        AUTH
     ================================================== */

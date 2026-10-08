@@ -11,6 +11,10 @@ export async function POST(
     const supabase =
       await createClient();
 
+    /* =========================================
+       AUTH
+    ========================================= */
+
     const {
       data: {
         user,
@@ -29,6 +33,10 @@ export async function POST(
         }
       );
     }
+
+    /* =========================================
+       BODY
+    ========================================= */
 
     const body =
       await request.json();
@@ -57,6 +65,10 @@ export async function POST(
       );
     }
 
+    /* =========================================
+       PREVIEW
+    ========================================= */
+
     const {
       data,
       error,
@@ -78,9 +90,39 @@ export async function POST(
         }
       );
 
+    /* =========================================
+       ERROR
+    ========================================= */
+
     if (error) {
+      const rawMessage =
+        error.message || "";
+
+      /* =========================================
+         MAINTENANCE BLOCK
+      ========================================= */
+
+      if (
+        rawMessage.includes(
+          "ROOM_BLOCKED"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Phòng đang bị khóa bảo trì trong thời gian lưu trú đã chọn.",
+
+            code:
+              "ROOM_BLOCKED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
       let message =
-        error.message;
+        rawMessage;
 
       if (
         message.includes(
@@ -111,6 +153,15 @@ export async function POST(
 
       if (
         message.includes(
+          "RATE_PLAN_NOT_FOUND"
+        )
+      ) {
+        message =
+          "Booking chưa có Rate Plan hợp lệ.";
+      }
+
+      if (
+        message.includes(
           "INVALID_DATE_RANGE"
         )
       ) {
@@ -127,6 +178,33 @@ export async function POST(
           "Bạn không có quyền thay đổi booking.";
       }
 
+      if (
+        message.includes(
+          "BOOKING_ROOM_NOT_FOUND"
+        )
+      ) {
+        message =
+          "Không tìm thấy booking room.";
+      }
+
+      if (
+        message.includes(
+          "TARGET_ROOM_NOT_FOUND"
+        )
+      ) {
+        message =
+          "Không tìm thấy phòng đích hợp lệ.";
+      }
+
+      if (
+        message.includes(
+          "DIFFERENT_PROPERTY"
+        )
+      ) {
+        message =
+          "Không thể chuyển booking sang phòng thuộc tòa nhà khác.";
+      }
+
       return NextResponse.json(
         {
           error:
@@ -137,6 +215,10 @@ export async function POST(
         }
       );
     }
+
+    /* =========================================
+       SUCCESS
+    ========================================= */
 
     return NextResponse.json({
       success: true,

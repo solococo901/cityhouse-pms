@@ -6,8 +6,6 @@ import {
   createAdminClient,
 } from "@/lib/supabase/admin";
 
-export const runtime =
-  "nodejs";
 
 export async function GET(
   request: Request

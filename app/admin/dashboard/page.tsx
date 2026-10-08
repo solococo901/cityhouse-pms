@@ -1,10 +1,26 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function AdminDashboardPage() {
-  const supabase = await createClient();
+/* ======================================================
+   NEXT.JS
 
-  const { data: properties } = await supabase
+   Dashboard đọc dữ liệu Supabase theo request.
+====================================================== */
+
+export const instant =
+  false;
+
+/* ======================================================
+   PAGE
+====================================================== */
+
+export default async function AdminDashboardPage() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: properties,
+  } = await supabase
     .from("properties")
     .select(`
       id,
@@ -15,14 +31,18 @@ export default async function AdminDashboardPage() {
     `)
     .order("name");
 
-  const { count: roomCount } = await supabase
+  const {
+    count: roomCount,
+  } = await supabase
     .from("rooms")
     .select("*", {
       count: "exact",
       head: true,
     });
 
-  const { count: bookingCount } = await supabase
+  const {
+    count: bookingCount,
+  } = await supabase
     .from("bookings")
     .select("*", {
       count: "exact",
@@ -95,29 +115,38 @@ export default async function AdminDashboardPage() {
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
-          {properties?.map((property) => (
+          {properties?.map(
+            (property) => (
+              <Link
+                key={
+                  property.id
+                }
+                href={`/admin/properties/${property.id}`}
+                className="rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm"
+              >
 
-            <Link
-              key={property.id}
-              href={`/admin/properties/${property.id}`}
-              className="rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-blue-300 hover:shadow-sm"
-            >
+                <p className="text-xs font-semibold text-blue-600">
+                  {
+                    property.code
+                  }
+                </p>
 
-              <p className="text-xs font-semibold text-blue-600">
-                {property.code}
-              </p>
+                <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                  {
+                    property.name
+                  }
+                </h3>
 
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                {property.name}
-              </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  {
+                    property.address ||
+                    "No address"
+                  }
+                </p>
 
-              <p className="mt-2 text-sm text-slate-500">
-                {property.address || "No address"}
-              </p>
-
-            </Link>
-
-          ))}
+              </Link>
+            )
+          )}
 
         </div>
 

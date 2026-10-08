@@ -7,10 +7,26 @@ import {
 
 import { createClient } from "@/lib/supabase/server";
 
-export default async function PropertiesPage() {
-  const supabase = await createClient();
+/* ======================================================
+   NEXT.JS
 
-  const { data: properties } = await supabase
+   Trang này đọc Supabase theo request.
+====================================================== */
+
+export const instant =
+  false;
+
+/* ======================================================
+   PAGE
+====================================================== */
+
+export default async function PropertiesPage() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: properties,
+  } = await supabase
     .from("properties")
     .select(`
       id,
@@ -38,54 +54,67 @@ export default async function PropertiesPage() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
 
-        {properties?.map((property) => (
+        {properties?.map(
+          (property) => (
 
-          <Link
-            key={property.id}
-            href={`/admin/properties/${property.id}`}
-            className="flex items-center justify-between border-b border-slate-100 px-6 py-5 last:border-0 hover:bg-slate-50"
-          >
+            <Link
+              key={
+                property.id
+              }
+              href={`/admin/properties/${property.id}`}
+              className="flex items-center justify-between border-b border-slate-100 px-6 py-5 last:border-0 hover:bg-slate-50"
+            >
 
-            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4">
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <Building2 size={22} />
-              </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <Building2
+                    size={22}
+                  />
+                </div>
 
-              <div>
+                <div>
 
-                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3">
 
-                  <h2 className="font-semibold text-slate-900">
-                    {property.name}
-                  </h2>
+                    <h2 className="font-semibold text-slate-900">
+                      {
+                        property.name
+                      }
+                    </h2>
 
-                  {property.active && (
-                    <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
-                      Active
-                    </span>
-                  )}
+                    {property.active && (
+                      <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                        Active
+                      </span>
+                    )}
+
+                  </div>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    {
+                      property.code
+                    }
+                    {" · "}
+                    {
+                      property.address ||
+                      "No address"
+                    }
+                  </p>
 
                 </div>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  {property.code}
-                  {" · "}
-                  {property.address || "No address"}
-                </p>
-
               </div>
 
-            </div>
+              <ChevronRight
+                size={20}
+                className="text-slate-400"
+              />
 
-            <ChevronRight
-              size={20}
-              className="text-slate-400"
-            />
+            </Link>
 
-          </Link>
-
-        ))}
+          )
+        )}
 
       </div>
 

@@ -8,6 +8,10 @@ export async function POST(
   request: Request
 ) {
   try {
+    /* =========================================
+       BODY
+    ========================================= */
+
     const body =
       await request.json();
 
@@ -31,24 +35,35 @@ export async function POST(
       );
     }
 
+    /* =========================================
+       AUTH
+    ========================================= */
+
     const supabase =
       await createClient();
 
     const {
-      data: { user },
+      data: {
+        user,
+      },
     } =
       await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json(
         {
-          error: "Unauthorized",
+          error:
+            "Unauthorized",
         },
         {
           status: 401,
         }
       );
     }
+
+    /* =========================================
+       MOVE ROOM
+    ========================================= */
 
     const {
       data,
@@ -65,12 +80,42 @@ export async function POST(
         }
       );
 
+    /* =========================================
+       ERROR
+    ========================================= */
+
     if (error) {
-      let message =
-        error.message;
+      const rawMessage =
+        error.message || "";
+
+      /* =========================================
+         MAINTENANCE BLOCK
+      ========================================= */
 
       if (
-        error.message.includes(
+        rawMessage.includes(
+          "ROOM_BLOCKED"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Phòng đang bị khóa bảo trì trong thời gian lưu trú đã chọn.",
+
+            code:
+              "ROOM_BLOCKED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
+      let message =
+        rawMessage;
+
+      if (
+        rawMessage.includes(
           "ROOM_OCCUPIED"
         )
       ) {
@@ -79,7 +124,7 @@ export async function POST(
       }
 
       if (
-        error.message.includes(
+        rawMessage.includes(
           "NO_INVENTORY"
         )
       ) {
@@ -88,7 +133,7 @@ export async function POST(
       }
 
       if (
-        error.message.includes(
+        rawMessage.includes(
           "PERMISSION_DENIED"
         )
       ) {
@@ -96,9 +141,37 @@ export async function POST(
           "Bạn không có quyền đổi phòng.";
       }
 
+      if (
+        rawMessage.includes(
+          "BOOKING_ROOM_NOT_FOUND"
+        )
+      ) {
+        message =
+          "Không tìm thấy booking room.";
+      }
+
+      if (
+        rawMessage.includes(
+          "TARGET_ROOM_NOT_FOUND"
+        )
+      ) {
+        message =
+          "Không tìm thấy phòng đích hợp lệ.";
+      }
+
+      if (
+        rawMessage.includes(
+          "DIFFERENT_PROPERTY"
+        )
+      ) {
+        message =
+          "Không thể chuyển booking sang phòng thuộc tòa nhà khác.";
+      }
+
       return NextResponse.json(
         {
-          error: message,
+          error:
+            message,
         },
         {
           status: 400,
@@ -106,12 +179,19 @@ export async function POST(
       );
     }
 
+    /* =========================================
+       SUCCESS
+    ========================================= */
+
     return NextResponse.json({
       success: true,
       data,
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Move booking room error:",
+      error
+    );
 
     return NextResponse.json(
       {

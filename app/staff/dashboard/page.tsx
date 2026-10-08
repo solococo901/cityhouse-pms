@@ -1,9 +1,25 @@
 import { createClient } from "@/lib/supabase/server";
 
-export default async function StaffDashboardPage() {
-  const supabase = await createClient();
+/* ======================================================
+   NEXT.JS
 
-  const { data: rooms } = await supabase
+   Staff Dashboard đọc dữ liệu Supabase theo request.
+====================================================== */
+
+export const instant =
+  false;
+
+/* ======================================================
+   PAGE
+====================================================== */
+
+export default async function StaffDashboardPage() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: rooms,
+  } = await supabase
     .from("rooms")
     .select(`
       id,
@@ -47,32 +63,34 @@ export default async function StaffDashboardPage() {
 
           <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
 
-            {rooms?.map((room) => (
+            {rooms?.map(
+              (room) => (
 
-              <div
-                key={room.id}
-                className="rounded-xl border p-4"
-              >
+                <div
+                  key={room.id}
+                  className="rounded-xl border p-4"
+                >
 
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
 
-                  <span className="text-xl font-bold">
-                    {room.room_number}
-                  </span>
+                    <span className="text-xl font-bold">
+                      {room.room_number}
+                    </span>
 
-                  <span className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700">
-                    {room.status}
-                  </span>
+                    <span className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700">
+                      {room.status}
+                    </span>
+
+                  </div>
+
+                  <p className="mt-3 text-sm text-slate-500">
+                    Floor {room.floor}
+                  </p>
 
                 </div>
 
-                <p className="mt-3 text-sm text-slate-500">
-                  Floor {room.floor}
-                </p>
-
-              </div>
-
-            ))}
+              )
+            )}
 
           </div>
 

@@ -13,10 +13,21 @@ import {
 export async function GET(
   request: Request
 ) {
-  try {
-    const supabase =
-      await createClient();
+  /*
+   * IMPORTANT:
+   *
+   * createClient() gọi cookies().
+   *
+   * Với Next.js 16 + cacheComponents,
+   * cookies() có thể throw tín hiệu nội bộ để
+   * Next dừng prerender và chuyển route sang request-time.
+   *
+   * Vì vậy KHÔNG đặt createClient() bên trong try/catch.
+   */
+  const supabase =
+    await createClient();
 
+  try {
     /* ==================================================
        AUTH
     ================================================== */

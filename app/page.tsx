@@ -1,22 +1,45 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+/* ======================================================
+   NEXT.JS
+
+   Root page dùng auth + Supabase theo request.
+====================================================== */
+
+export const instant =
+  false;
+
+/* ======================================================
+   PAGE
+====================================================== */
+
 export default async function HomePage() {
-  const supabase = await createClient();
+  const supabase =
+    await createClient();
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: {
+      user,
+    },
+  } =
+    await supabase.auth.getUser();
 
   if (!user) {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const {
+    data: profile,
+  } =
+    await supabase
+      .from("profiles")
+      .select("role")
+      .eq(
+        "id",
+        user.id
+      )
+      .single();
 
   if (!profile) {
     redirect("/login");
@@ -27,8 +50,12 @@ export default async function HomePage() {
     profile.role === "admin" ||
     profile.role === "manager"
   ) {
-    redirect("/admin/dashboard");
+    redirect(
+      "/admin/dashboard"
+    );
   }
 
-  redirect("/staff/dashboard");
+  redirect(
+    "/staff/dashboard"
+  );
 }

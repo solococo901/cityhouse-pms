@@ -1,10 +1,26 @@
 import AddRatePlanForm from "@/components/admin/add-rate-plan-form";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function RatesPage() {
-  const supabase = await createClient();
+/* ======================================================
+   NEXT.JS
 
-  const { data: property } = await supabase
+   Trang này đọc Supabase theo request.
+====================================================== */
+
+export const instant =
+  false;
+
+/* ======================================================
+   PAGE
+====================================================== */
+
+export default async function RatesPage() {
+  const supabase =
+    await createClient();
+
+  const {
+    data: property,
+  } = await supabase
     .from("properties")
     .select("id, name, code")
     .eq("active", true)
@@ -26,10 +42,15 @@ export default async function RatesPage() {
     );
   }
 
-  const { data: ratePlans } = await supabase
+  const {
+    data: ratePlans,
+  } = await supabase
     .from("rate_plans")
     .select("*")
-    .eq("property_id", property.id)
+    .eq(
+      "property_id",
+      property.id
+    )
     .order("name");
 
   return (
@@ -52,7 +73,9 @@ export default async function RatesPage() {
       </div>
 
       <AddRatePlanForm
-        propertyId={property.id}
+        propertyId={
+          property.id
+        }
       />
 
       <div className="mt-8">
@@ -63,52 +86,66 @@ export default async function RatesPage() {
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
 
-          {ratePlans?.map((rate) => (
+          {ratePlans?.map(
+            (
+              rate
+            ) => (
 
-            <div
-              key={rate.id}
-              className="flex items-center justify-between border-b border-slate-100 px-6 py-5 last:border-none"
-            >
+              <div
+                key={
+                  rate.id
+                }
+                className="flex items-center justify-between border-b border-slate-100 px-6 py-5 last:border-none"
+              >
 
-              <div>
+                <div>
 
-                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3">
 
-                  <h3 className="font-semibold text-slate-900">
-                    {rate.name}
-                  </h3>
+                    <h3 className="font-semibold text-slate-900">
+                      {
+                        rate.name
+                      }
+                    </h3>
 
-                  {rate.active && (
-                    <span className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700">
-                      Active
-                    </span>
-                  )}
+                    {rate.active && (
+                      <span className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700">
+                        Active
+                      </span>
+                    )}
+
+                  </div>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    {
+                      rate.code
+                    }
+                  </p>
 
                 </div>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  {rate.code}
-                </p>
+                <div className="text-right">
+
+                  <p className="text-sm text-slate-600">
+                    {
+                      rate.refundable
+                        ? "Refundable"
+                        : "Non-refundable"
+                    }
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    {
+                      rate.meal_plan
+                    }
+                  </p>
+
+                </div>
 
               </div>
 
-              <div className="text-right">
-
-                <p className="text-sm text-slate-600">
-                  {rate.refundable
-                    ? "Refundable"
-                    : "Non-refundable"}
-                </p>
-
-                <p className="mt-1 text-xs text-slate-400">
-                  {rate.meal_plan}
-                </p>
-
-              </div>
-
-            </div>
-
-          ))}
+            )
+          )}
 
         </div>
 

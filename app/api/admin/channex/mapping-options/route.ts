@@ -53,10 +53,10 @@ type ChannexRatePlan = {
 export async function GET(
   request: Request
 ) {
-  try {
+ 
     const supabase =
       await createClient();
-
+ try {
     /* =========================================
        AUTH
     ========================================= */

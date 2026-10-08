@@ -101,8 +101,34 @@ export async function POST(
     ========================================= */
 
     if (error) {
+      const rawMessage =
+        error.message || "";
+
+      /* =========================================
+         MAINTENANCE BLOCK
+      ========================================= */
+
+      if (
+        rawMessage.includes(
+          "ROOM_BLOCKED"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Phòng đang bị khóa bảo trì trong thời gian lưu trú đã chọn.",
+
+            code:
+              "ROOM_BLOCKED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
       let message =
-        error.message;
+        rawMessage;
 
       if (
         message.includes(

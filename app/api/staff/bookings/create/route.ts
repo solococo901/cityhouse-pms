@@ -11,6 +11,14 @@ function getErrorMessage(
 ) {
   if (
     message.includes(
+      "ROOM_BLOCKED"
+    )
+  ) {
+    return "Phòng đang bị khóa bảo trì trong thời gian lưu trú đã chọn.";
+  }
+
+  if (
+    message.includes(
       "ROOM_OCCUPIED"
     )
   ) {
@@ -79,6 +87,10 @@ export async function POST(
     const supabase =
       await createClient();
 
+    /* ==================================================
+       AUTH
+    ================================================== */
+
     const {
       data: {
         user,
@@ -101,6 +113,10 @@ export async function POST(
         }
       );
     }
+
+    /* ==================================================
+       BODY
+    ================================================== */
 
     const body =
       await request.json();
@@ -180,6 +196,10 @@ export async function POST(
         body.totalAmount ?? 0
       );
 
+    /* ==================================================
+       VALIDATION
+    ================================================== */
+
     if (
       !propertyId ||
       !roomId ||
@@ -223,15 +243,18 @@ export async function POST(
       );
     }
 
-    /*
-     * Backward-compatible rollout:
-     *
-     * - Old UI does not send ratePlanId -> call the existing
-     *   12-argument RPC which auto-selects Website rate.
-     *
-     * - New UI sends ratePlanId -> call the new 13-argument
-     *   RPC so the selected plan is explicit.
-     */
+    /* ==================================================
+       RPC ARGS
+
+       Backward-compatible rollout:
+
+       - Old UI does not send ratePlanId
+         -> call existing 12-argument RPC.
+
+       - New UI sends ratePlanId
+         -> call 13-argument RPC.
+    ================================================== */
+
     const rpcArgs =
       ratePlanId
         ? {
@@ -320,6 +343,10 @@ export async function POST(
               notes,
           };
 
+    /* ==================================================
+       CREATE BOOKING
+    ================================================== */
+
     const {
       data,
       error,
@@ -329,6 +356,10 @@ export async function POST(
         rpcArgs
       );
 
+    /* ==================================================
+       ERROR
+    ================================================== */
+
     if (
       error
     ) {
@@ -337,11 +368,37 @@ export async function POST(
         error
       );
 
+      const rawMessage =
+        error.message || "";
+
+      /* ================================================
+         MAINTENANCE BLOCK
+      ================================================ */
+
+      if (
+        rawMessage.includes(
+          "ROOM_BLOCKED"
+        )
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Phòng đang bị khóa bảo trì trong thời gian lưu trú đã chọn.",
+
+            code:
+              "ROOM_BLOCKED",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
       return NextResponse.json(
         {
           error:
             getErrorMessage(
-              error.message
+              rawMessage
             ),
         },
         {
@@ -349,6 +406,10 @@ export async function POST(
         }
       );
     }
+
+    /* ==================================================
+       SUCCESS
+    ================================================== */
 
     return NextResponse.json({
       success: true,
