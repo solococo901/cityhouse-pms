@@ -2090,8 +2090,6 @@ export default function ReservationCalendar({
 
         <BookingDrawer
 
-          rooms={rooms}
-
           booking={
 
             selectedBooking

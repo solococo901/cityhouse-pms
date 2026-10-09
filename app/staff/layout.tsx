@@ -1,5 +1,7 @@
+
 import {
   ReactNode,
+  Suspense,
 } from "react";
 
 import {
@@ -14,7 +16,40 @@ import StaffSidebar
 from "@/components/staff/staff-sidebar";
 
 
-export default async function StaffLayout({
+/* ======================================================
+   STAFF LAYOUT
+====================================================== */
+
+export default function StaffLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
+          <p className="text-sm text-slate-500">
+            Loading staff workspace...
+          </p>
+        </div>
+      }
+    >
+      <AuthenticatedStaffLayout>
+        {children}
+      </AuthenticatedStaffLayout>
+    </Suspense>
+  );
+
+}
+
+
+/* ======================================================
+   AUTHENTICATED STAFF LAYOUT
+====================================================== */
+
+async function AuthenticatedStaffLayout({
   children,
 }: {
   children: ReactNode;

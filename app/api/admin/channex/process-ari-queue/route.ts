@@ -1105,6 +1105,67 @@ export async function POST(
     }
 
 
+        /* ==================================================
+       CHANNEX CONNECTION PREFLIGHT
+
+       Prevent queue claim when the property
+       has no active connected Channex connection.
+    ================================================== */
+
+    const precheckBaseUrl = (
+      process.env.CHANNEX_BASE_URL ||
+      "https://staging.channex.io"
+    ).replace(/\/+$/, "");
+
+    const precheckEnvironment =
+      precheckBaseUrl.includes("staging")
+        ? "staging"
+        : "production";
+
+    const {
+      data: precheckConnection,
+      error: precheckConnectionError,
+    } = await supabase
+      .from("channel_connections")
+      .select(`
+        id,
+        connection_status,
+        channex_property_id
+      `)
+      .eq("property_id", propertyId)
+      .eq("provider", "channex")
+      .eq("environment", precheckEnvironment)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (precheckConnectionError) {
+      throw new Error(
+        precheckConnectionError.message
+      );
+    }
+
+    if (
+      !precheckConnection ||
+      precheckConnection.connection_status !==
+        "connected" ||
+      !precheckConnection.channex_property_id
+    ) {
+      return NextResponse.json({
+        success: true,
+        status: "warning",
+        processed: 0,
+        availability: 0,
+        restrictions: 0,
+        warnings: [
+          {
+            source: "connection",
+            message:
+              "Channex connection chưa sẵn sàng. ARI queue chưa được claim.",
+          },
+        ],
+      });
+    }
+
 
     /* ==================================================
 

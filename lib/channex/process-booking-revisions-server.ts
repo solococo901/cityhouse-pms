@@ -3,6 +3,19 @@ import {
 } from "@/lib/supabase/admin";
 
 /* ======================================================
+   STEP 32O.4
+
+   Supported Channex booking revision statuses:
+   - new
+   - modified
+   - cancelled
+
+   ACK rule:
+   - ACK only after the matching PMS ingest RPC succeeds.
+   - Unknown statuses remain unacknowledged.
+====================================================== */
+
+/* ======================================================
    TYPES
 ====================================================== */
 
@@ -154,6 +167,25 @@ type ChannexFeedResponse = {
   meta?: unknown;
 };
 
+type ChannexPaginationMeta = {
+  limit?: number | string | null;
+  page?: number | string | null;
+  total?: number | string | null;
+};
+
+type ChannexRevisionListResponse = {
+  data?: ChannexBookingRevision[];
+  meta?: ChannexPaginationMeta;
+};
+
+type ChannelBookingRecoveryState = {
+  connection_id: string;
+  recovery_from_at: string;
+  last_scan_started_at: string | null;
+  last_scan_completed_at: string | null;
+  last_error: string | null;
+};
+
 type RpcResult = {
   success?: boolean;
   already_processed?: boolean;
@@ -196,6 +228,16 @@ export type BookingRevisionWorkerResult = {
   propertyId: string;
 
   fetched: number;
+  feedFetched: number;
+
+  recoveryScanned: boolean;
+  recoveryFetched: number;
+  recoveryEligible: number;
+  recoverySkippedAcknowledged: number;
+  recoveryCursorFrom: string | null;
+  recoveryCursorTo: string | null;
+  recoveryError: string | null;
+
   processed: number;
   acknowledged: number;
   unsupported: number;
@@ -314,6 +356,64 @@ function buildHeaders() {
     "user-api-key":
       getApiKey(),
   };
+}
+
+const RECOVERY_SCAN_INTERVAL_MS =
+  10 * 60 * 1000;
+
+const RECOVERY_PAGE_LIMIT =
+  100;
+
+const RECOVERY_MAX_PAGES =
+  100;
+
+function parseTimestampMs(
+  value: unknown
+) {
+  if (
+    typeof value !==
+      "string" ||
+    value.trim() === ""
+  ) {
+    return null;
+  }
+
+  let normalized =
+    value.trim();
+
+  /*
+   * Channex inserted_at values can be returned without an
+   * explicit timezone and can include microseconds. Treat a
+   * timezone-less Channex timestamp as UTC and trim fractional
+   * precision to milliseconds for stable JavaScript parsing.
+   */
+  normalized =
+    normalized.replace(
+      /(\.\d{3})\d+/,
+      "$1"
+    );
+
+  if (
+    /^\d{4}-\d{2}-\d{2}T/.test(
+      normalized
+    ) &&
+    !/(Z|[+-]\d{2}:?\d{2})$/i.test(
+      normalized
+    )
+  ) {
+    normalized += "Z";
+  }
+
+  const parsed =
+    Date.parse(
+      normalized
+    );
+
+  return Number.isFinite(
+    parsed
+  )
+    ? parsed
+    : null;
 }
 
 /**
@@ -778,7 +878,8 @@ function validateSupportedRevision(
 
   if (
     status !== "new" &&
-    status !== "modified"
+    status !== "modified" &&
+    status !== "cancelled"
   ) {
     throw new Error(
       `UNSUPPORTED_BOOKING_REVISION_STATUS:${status ?? "unknown"}`
@@ -927,6 +1028,143 @@ async function fetchRevisionFeed(
   )
     ? payload.data
     : [];
+}
+
+async function fetchRevisionCollectionWindow(
+  channexPropertyId: string,
+  recoveryFromAt: string,
+  scanCutoffAt: string
+) {
+  const baseUrl =
+    getBaseUrl();
+
+  const revisions:
+    ChannexBookingRevision[] =
+    [];
+
+  let page = 1;
+
+  while (
+    page <=
+    RECOVERY_MAX_PAGES
+  ) {
+    const url =
+      new URL(
+        `${baseUrl}/api/v1/booking_revisions`
+      );
+
+    url.searchParams.set(
+      "filter[property_id]",
+      channexPropertyId
+    );
+
+    url.searchParams.set(
+      "filter[inserted_at][gte]",
+      recoveryFromAt
+    );
+
+    url.searchParams.set(
+      "filter[inserted_at][lte]",
+      scanCutoffAt
+    );
+
+    url.searchParams.set(
+      "order[inserted_at]",
+      "asc"
+    );
+
+    url.searchParams.set(
+      "pagination[page]",
+      String(page)
+    );
+
+    url.searchParams.set(
+      "pagination[limit]",
+      String(
+        RECOVERY_PAGE_LIMIT
+      )
+    );
+
+    const response =
+      await fetch(
+        url.toString(),
+        {
+          method:
+            "GET",
+
+          headers:
+            buildHeaders(),
+
+          cache:
+            "no-store",
+        }
+      );
+
+    const text =
+      await response.text();
+
+    let payload:
+      ChannexRevisionListResponse =
+      {};
+
+    if (text) {
+      try {
+        payload =
+          JSON.parse(
+            text
+          ) as ChannexRevisionListResponse;
+      } catch {
+        throw new Error(
+          `CHANNEX_RECOVERY_INVALID_JSON HTTP ${response.status}: ${text.slice(
+            0,
+            500
+          )}`
+        );
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `CHANNEX_RECOVERY_HTTP_${response.status}: ${text.slice(
+          0,
+          1000
+        )}`
+      );
+    }
+
+    const pageData =
+      Array.isArray(
+        payload.data
+      )
+        ? payload.data
+        : [];
+
+    revisions.push(
+      ...pageData
+    );
+
+    const total =
+      asInteger(
+        payload.meta?.total,
+        revisions.length
+      );
+
+    if (
+      pageData.length === 0 ||
+      pageData.length <
+        RECOVERY_PAGE_LIMIT ||
+      revisions.length >=
+        total
+    ) {
+      return revisions;
+    }
+
+    page += 1;
+  }
+
+  throw new Error(
+    `CHANNEX_RECOVERY_PAGE_LIMIT_EXCEEDED:${RECOVERY_MAX_PAGES}`
+  );
 }
 
 async function acknowledgeRevision(
@@ -1125,6 +1363,108 @@ async function markAckFailure(
     );
 }
 
+async function reconcileAcknowledgedRevision(
+  connectionId: string,
+  revisionId: string
+) {
+  const supabase =
+    createAdminClient();
+
+  const {
+    data: ledger,
+    error: readError,
+  } = await supabase
+    .from(
+      "channel_booking_revisions"
+    )
+    .select(
+      `
+        id,
+        status,
+        ack_attempts,
+        acknowledged_at
+      `
+    )
+    .eq(
+      "connection_id",
+      connectionId
+    )
+    .eq(
+      "revision_id",
+      revisionId
+    )
+    .maybeSingle();
+
+  if (readError) {
+    throw new Error(
+      `RECOVERY_LEDGER_READ_FAILED:${readError.message}`
+    );
+  }
+
+  if (!ledger) {
+    throw new Error(
+      "ACKNOWLEDGED_WITHOUT_LEDGER"
+    );
+  }
+
+  if (
+    ledger.status !==
+      "processed" &&
+    ledger.status !==
+      "ignored"
+  ) {
+    throw new Error(
+      `ACKNOWLEDGED_LEDGER_NOT_FINAL:${ledger.status ?? "unknown"}`
+    );
+  }
+
+  if (
+    ledger.acknowledged_at
+  ) {
+    return;
+  }
+
+  const nowIso =
+    new Date()
+      .toISOString();
+
+  const {
+    error: updateError,
+  } = await supabase
+    .from(
+      "channel_booking_revisions"
+    )
+    .update({
+      ack_attempts:
+        Math.max(
+          Number(
+            ledger.ack_attempts ??
+            0
+          ),
+          1
+        ),
+
+      ack_last_error:
+        null,
+
+      acknowledged_at:
+        nowIso,
+
+      updated_at:
+        nowIso,
+    })
+    .eq(
+      "id",
+      ledger.id
+    );
+
+  if (updateError) {
+    throw new Error(
+      `RECOVERY_LEDGER_RECONCILE_FAILED:${updateError.message}`
+    );
+  }
+}
+
 /* ======================================================
    WORKER
 ====================================================== */
@@ -1219,6 +1559,30 @@ export async function processBookingRevisionsForConnection(
       fetched:
         0,
 
+      feedFetched:
+        0,
+
+      recoveryScanned:
+        false,
+
+      recoveryFetched:
+        0,
+
+      recoveryEligible:
+        0,
+
+      recoverySkippedAcknowledged:
+        0,
+
+      recoveryCursorFrom:
+        null,
+
+      recoveryCursorTo:
+        null,
+
+      recoveryError:
+        null,
+
       processed:
         0,
 
@@ -1235,37 +1599,26 @@ export async function processBookingRevisionsForConnection(
         [],
     };
 
-  const feed =
-    await fetchRevisionFeed(
-      connection
-        .channex_property_id
-    );
+  const attemptedOutcomes =
+    new Map<
+      string,
+      | "acknowledged"
+      | "unsupported"
+      | "error"
+    >();
 
-  /*
-   * Process oldest-first, sequentially.
-   *
-   * This is intentional. Later, modified/cancelled revisions for
-   * the same booking must preserve revision order.
-   */
-  const revisions =
-    feed.slice(
-      0,
-      Math.min(
-        Math.max(
-          batchLimit,
-          1
-        ),
-        100
-      )
-    );
-
-  result.fetched =
-    revisions.length;
-
-  for (
-    const revision
-    of revisions
-  ) {
+  async function processRevision(
+    revision:
+      ChannexBookingRevision,
+    retrievalPath:
+      | "feed"
+      | "recovery"
+  ):
+    Promise<
+      | "acknowledged"
+      | "unsupported"
+      | "error"
+    > {
     const rawRevisionId =
       asString(
         revision.id
@@ -1296,7 +1649,7 @@ export async function processBookingRevisionsForConnection(
         validateSupportedRevision(
           revision,
           connection
-            .channex_property_id
+            .channex_property_id as string
         );
 
       const attributes =
@@ -1433,11 +1786,23 @@ export async function processBookingRevisionsForConnection(
           attributes.notes ??
           null,
 
+        /*
+         * Current revision ledger accepts webhook/feed/manual.
+         * Recovery is still an automated pull path, so the durable
+         * delivery_source remains "feed" for now. The exact retrieval
+         * path is preserved in the sanitized raw payload below.
+         */
         p_delivery_source:
           "feed",
 
-        p_raw_payload:
-          sanitized,
+        p_raw_payload: {
+          ...sanitized,
+
+          ingest_meta: {
+            retrieval_path:
+              retrievalPath,
+          },
+        },
       };
 
       let rpcData:
@@ -1474,10 +1839,25 @@ export async function processBookingRevisionsForConnection(
 
         rpcError =
           response.error;
-      } else {
+      } else if (
+        validated.status ===
+        "modified"
+      ) {
         const response =
           await supabase.rpc(
             "ingest_channex_modified_booking_revision",
+            rpcArguments
+          );
+
+        rpcData =
+          response.data;
+
+        rpcError =
+          response.error;
+      } else {
+        const response =
+          await supabase.rpc(
+            "ingest_channex_cancelled_booking_revision",
             rpcArguments
           );
 
@@ -1517,9 +1897,9 @@ export async function processBookingRevisionsForConnection(
       /*
        * ACK only after PMS persistence succeeded.
        *
-       * If ACK fails, the revision remains in Channex feed.
-       * Next worker run is safe because the ingest RPC is
-       * idempotent and will return already_processed.
+       * If ACK fails, the revision remains pending at Channex.
+       * A later Feed or Recovery pass is safe because the ingest
+       * RPC is idempotent.
        */
       try {
         await acknowledgeRevision(
@@ -1570,6 +1950,13 @@ export async function processBookingRevisionsForConnection(
           rpcResult.booking_id ??
           null,
       });
+
+      attemptedOutcomes.set(
+        validated.revisionId,
+        "acknowledged"
+      );
+
+      return "acknowledged";
     } catch (
       error
     ) {
@@ -1587,9 +1974,9 @@ export async function processBookingRevisionsForConnection(
          * CRITICAL:
          * Never ACK unsupported revision statuses.
          *
-         * NEW and MODIFIED are supported here. CANCELLED and
-         * any future unknown status must remain in the feed until
-         * dedicated handlers are implemented and tested.
+         * NEW, MODIFIED and CANCELLED are supported here.
+         * Any future unknown status must remain pending until
+         * a dedicated handler is implemented and tested.
          */
         result.unsupported +=
           1;
@@ -1611,7 +1998,17 @@ export async function processBookingRevisionsForConnection(
             message,
         });
 
-        continue;
+        if (
+          rawRevisionId !==
+          "unknown"
+        ) {
+          attemptedOutcomes.set(
+            rawRevisionId,
+            "unsupported"
+          );
+        }
+
+        return "unsupported";
       }
 
       result.errors +=
@@ -1633,8 +2030,774 @@ export async function processBookingRevisionsForConnection(
         error:
           message,
       });
+
+      if (
+        rawRevisionId !==
+        "unknown"
+      ) {
+        attemptedOutcomes.set(
+          rawRevisionId,
+          "error"
+        );
+      }
+
+      return "error";
     }
+  }
+
+  /* ====================================================
+     PRIMARY PATH — BOOKING REVISION FEED
+  ==================================================== */
+
+  const feed =
+    await fetchRevisionFeed(
+      connection
+        .channex_property_id
+    );
+
+  /*
+   * Process oldest-first, sequentially.
+   * This preserves revision order for the same booking.
+   */
+  const feedRevisions =
+    feed.slice(
+      0,
+      Math.min(
+        Math.max(
+          batchLimit,
+          1
+        ),
+        100
+      )
+    );
+
+  result.feedFetched =
+    feedRevisions.length;
+
+  result.fetched +=
+    feedRevisions.length;
+
+  for (
+    const revision
+    of feedRevisions
+  ) {
+    await processRevision(
+      revision,
+      "feed"
+    );
+  }
+
+  /* ====================================================
+     RECOVERY STATE
+  ==================================================== */
+
+  const {
+    data:
+      recoveryStateData,
+
+    error:
+      recoveryStateError,
+  } = await supabase
+    .from(
+      "channel_booking_recovery_state"
+    )
+    .select(
+      `
+        connection_id,
+        recovery_from_at,
+        last_scan_started_at,
+        last_scan_completed_at,
+        last_error
+      `
+    )
+    .eq(
+      "connection_id",
+      connection.id
+    )
+    .maybeSingle();
+
+  if (
+    recoveryStateError
+  ) {
+    const message =
+      `RECOVERY_STATE_READ_FAILED:${recoveryStateError.message}`;
+
+    result.recoveryError =
+      message;
+
+    result.errors +=
+      1;
+
+    result.items.push({
+      revisionId:
+        "recovery-scan",
+
+      channelBookingId:
+        null,
+
+      eventType:
+        "recovery",
+
+      status:
+        "error",
+
+      error:
+        message,
+    });
+
+    return result;
+  }
+
+  if (
+    !recoveryStateData
+  ) {
+    /*
+     * New connections initialize their recovery boundary NOW.
+     * Do not backfill historical pending revisions automatically.
+     */
+    const nowIso =
+      new Date()
+        .toISOString();
+
+    const {
+      error:
+        initializeError,
+    } = await supabase
+      .from(
+        "channel_booking_recovery_state"
+      )
+      .insert({
+        connection_id:
+          connection.id,
+
+        recovery_from_at:
+          nowIso,
+
+        last_scan_started_at:
+          null,
+
+        last_scan_completed_at:
+          null,
+
+        last_error:
+          null,
+
+        updated_at:
+          nowIso,
+      });
+
+    if (
+      initializeError
+    ) {
+      const message =
+        `RECOVERY_STATE_INIT_FAILED:${initializeError.message}`;
+
+      result.recoveryError =
+        message;
+
+      result.errors +=
+        1;
+
+      result.items.push({
+        revisionId:
+          "recovery-scan",
+
+        channelBookingId:
+          null,
+
+        eventType:
+          "recovery",
+
+        status:
+          "error",
+
+        error:
+          message,
+      });
+    }
+
+    return result;
+  }
+
+  const recoveryState =
+    recoveryStateData as
+      ChannelBookingRecoveryState;
+
+  result.recoveryCursorFrom =
+    recoveryState
+      .recovery_from_at;
+
+  result.recoveryCursorTo =
+    recoveryState
+      .recovery_from_at;
+
+  const lastScanMs =
+    parseTimestampMs(
+      recoveryState
+        .last_scan_started_at
+    );
+
+  const nowMs =
+    Date.now();
+
+  if (
+    lastScanMs !== null &&
+    nowMs - lastScanMs <
+      RECOVERY_SCAN_INTERVAL_MS
+  ) {
+    return result;
+  }
+
+  /* ====================================================
+     RECOVERY PATH — BOOKING REVISIONS COLLECTION
+  ==================================================== */
+
+  const scanStartedAt =
+    new Date()
+      .toISOString();
+
+  const recoveryFromMs =
+    parseTimestampMs(
+      recoveryState
+        .recovery_from_at
+    );
+
+  const scanStartedMs =
+    parseTimestampMs(
+      scanStartedAt
+    );
+
+  if (
+    recoveryFromMs === null ||
+    scanStartedMs === null
+  ) {
+    const message =
+      "RECOVERY_INVALID_CURSOR_TIMESTAMP";
+
+    result.recoveryError =
+      message;
+
+    result.errors +=
+      1;
+
+    result.items.push({
+      revisionId:
+        "recovery-scan",
+
+      channelBookingId:
+        null,
+
+      eventType:
+        "recovery",
+
+      status:
+        "error",
+
+      error:
+        message,
+    });
+
+    return result;
+  }
+
+  if (
+    recoveryFromMs >
+    scanStartedMs
+  ) {
+    const message =
+      "RECOVERY_CURSOR_IN_FUTURE";
+
+    result.recoveryError =
+      message;
+
+    result.errors +=
+      1;
+
+    result.items.push({
+      revisionId:
+        "recovery-scan",
+
+      channelBookingId:
+        null,
+
+      eventType:
+        "recovery",
+
+      status:
+        "error",
+
+      error:
+        message,
+    });
+
+    return result;
+  }
+
+  const {
+    error:
+      scanStartUpdateError,
+  } = await supabase
+    .from(
+      "channel_booking_recovery_state"
+    )
+    .update({
+      last_scan_started_at:
+        scanStartedAt,
+
+      last_error:
+        null,
+
+      updated_at:
+        scanStartedAt,
+    })
+    .eq(
+      "connection_id",
+      connection.id
+    );
+
+  if (
+    scanStartUpdateError
+  ) {
+    const message =
+      `RECOVERY_STATE_START_UPDATE_FAILED:${scanStartUpdateError.message}`;
+
+    result.recoveryError =
+      message;
+
+    result.errors +=
+      1;
+
+    result.items.push({
+      revisionId:
+        "recovery-scan",
+
+      channelBookingId:
+        null,
+
+      eventType:
+        "recovery",
+
+      status:
+        "error",
+
+      error:
+        message,
+    });
+
+    return result;
+  }
+
+  result.recoveryScanned =
+    true;
+
+  try {
+    const collection =
+      await fetchRevisionCollectionWindow(
+        connection
+          .channex_property_id,
+        recoveryState
+          .recovery_from_at,
+        scanStartedAt
+      );
+
+    const windowRevisions =
+      collection
+        .filter(
+          (
+            revision
+          ) => {
+            const insertedAtMs =
+              parseTimestampMs(
+                revision
+                  .attributes
+                  ?.inserted_at
+              );
+
+            return (
+              insertedAtMs !==
+                null &&
+              insertedAtMs >=
+                recoveryFromMs &&
+              insertedAtMs <=
+                scanStartedMs
+            );
+          }
+        )
+        .sort(
+          (
+            a,
+            b
+          ) => {
+            const aMs =
+              parseTimestampMs(
+                a.attributes
+                  ?.inserted_at
+              ) ?? 0;
+
+            const bMs =
+              parseTimestampMs(
+                b.attributes
+                  ?.inserted_at
+              ) ?? 0;
+
+            return aMs - bMs;
+          }
+        );
+
+    result.recoveryFetched =
+      windowRevisions.length;
+
+    let cursorBlocked =
+      false;
+
+    let cursorBlockReason:
+      string | null =
+      null;
+
+    for (
+      const revision
+      of windowRevisions
+    ) {
+      const revisionId =
+        asString(
+          revision.id
+        ) ??
+        asString(
+          revision
+            .attributes
+            ?.id
+        );
+
+      const bookingId =
+        asString(
+          revision
+            .attributes
+            ?.booking_id
+        );
+
+      const status =
+        asString(
+          revision
+            .attributes
+            ?.status
+        );
+
+      const acknowledgeStatus =
+        asString(
+          revision
+            .attributes
+            ?.acknowledge_status
+        );
+
+      if (!revisionId) {
+        cursorBlocked =
+          true;
+
+        cursorBlockReason ??=
+          "RECOVERY_REVISION_ID_MISSING";
+
+        result.errors +=
+          1;
+
+        result.items.push({
+          revisionId:
+            "unknown",
+
+          channelBookingId:
+            bookingId,
+
+          eventType:
+            status,
+
+          status:
+            "error",
+
+          error:
+            "RECOVERY_REVISION_ID_MISSING",
+        });
+
+        continue;
+      }
+
+      if (
+        acknowledgeStatus ===
+        "acknowledged"
+      ) {
+        result.recoverySkippedAcknowledged +=
+          1;
+
+        try {
+          await reconcileAcknowledgedRevision(
+            connection.id,
+            revisionId
+          );
+        } catch (
+          reconcileError
+        ) {
+          const message =
+            reconcileError instanceof
+            Error
+              ? reconcileError.message
+              : String(
+                  reconcileError
+                );
+
+          cursorBlocked =
+            true;
+
+          cursorBlockReason ??=
+            message;
+
+          result.errors +=
+            1;
+
+          result.items.push({
+            revisionId,
+
+            channelBookingId:
+              bookingId,
+
+            eventType:
+              status,
+
+            status:
+              "error",
+
+            error:
+              message,
+          });
+        }
+
+        continue;
+      }
+
+      if (
+        acknowledgeStatus !==
+        "pending"
+      ) {
+        const message =
+          `RECOVERY_UNKNOWN_ACK_STATUS:${acknowledgeStatus ?? "unknown"}`;
+
+        cursorBlocked =
+          true;
+
+        cursorBlockReason ??=
+          message;
+
+        result.errors +=
+          1;
+
+        result.items.push({
+          revisionId,
+
+          channelBookingId:
+            bookingId,
+
+          eventType:
+            status,
+
+          status:
+            "error",
+
+          error:
+            message,
+        });
+
+        continue;
+      }
+
+      result.recoveryEligible +=
+        1;
+
+      const previousOutcome =
+        attemptedOutcomes.get(
+          revisionId
+        );
+
+      if (
+        previousOutcome
+      ) {
+        if (
+          previousOutcome !==
+          "acknowledged"
+        ) {
+          cursorBlocked =
+            true;
+
+          cursorBlockReason ??=
+            `RECOVERY_PREVIOUS_ATTEMPT_${previousOutcome.toUpperCase()}`;
+        }
+
+        continue;
+      }
+
+      result.fetched +=
+        1;
+
+      const outcome =
+        await processRevision(
+          revision,
+          "recovery"
+        );
+
+      if (
+        outcome !==
+        "acknowledged"
+      ) {
+        cursorBlocked =
+          true;
+
+        cursorBlockReason ??=
+          `RECOVERY_REVISION_${outcome.toUpperCase()}:${revisionId}`;
+      }
+    }
+
+    const scanCompletedAt =
+      new Date()
+        .toISOString();
+
+    if (
+      cursorBlocked
+    ) {
+      const message =
+        cursorBlockReason ??
+        "RECOVERY_CURSOR_NOT_ADVANCED";
+
+      result.recoveryError =
+        message;
+
+      const {
+        error:
+          blockedUpdateError,
+      } = await supabase
+        .from(
+          "channel_booking_recovery_state"
+        )
+        .update({
+          last_scan_completed_at:
+            scanCompletedAt,
+
+          last_error:
+            message.slice(
+              0,
+              5000
+            ),
+
+          updated_at:
+            scanCompletedAt,
+        })
+        .eq(
+          "connection_id",
+          connection.id
+        );
+
+      if (
+        blockedUpdateError
+      ) {
+        throw new Error(
+          `RECOVERY_STATE_BLOCKED_UPDATE_FAILED:${blockedUpdateError.message}`
+        );
+      }
+
+      return result;
+    }
+
+    const {
+      error:
+        successUpdateError,
+    } = await supabase
+      .from(
+        "channel_booking_recovery_state"
+      )
+      .update({
+        recovery_from_at:
+          scanStartedAt,
+
+        last_scan_completed_at:
+          scanCompletedAt,
+
+        last_error:
+          null,
+
+        updated_at:
+          scanCompletedAt,
+      })
+      .eq(
+        "connection_id",
+        connection.id
+      );
+
+    if (
+      successUpdateError
+    ) {
+      throw new Error(
+        `RECOVERY_STATE_SUCCESS_UPDATE_FAILED:${successUpdateError.message}`
+      );
+    }
+
+    result.recoveryCursorTo =
+      scanStartedAt;
+  } catch (
+    recoveryError
+  ) {
+    const message =
+      recoveryError instanceof
+      Error
+        ? recoveryError.message
+        : String(
+            recoveryError
+          );
+
+    result.recoveryError =
+      message;
+
+    result.errors +=
+      1;
+
+    result.items.push({
+      revisionId:
+        "recovery-scan",
+
+      channelBookingId:
+        null,
+
+      eventType:
+        "recovery",
+
+      status:
+        "error",
+
+      error:
+        message,
+    });
+
+    const failedAt =
+      new Date()
+        .toISOString();
+
+    await supabase
+      .from(
+        "channel_booking_recovery_state"
+      )
+      .update({
+        last_scan_completed_at:
+          failedAt,
+
+        last_error:
+          message.slice(
+            0,
+            5000
+          ),
+
+        updated_at:
+          failedAt,
+      })
+      .eq(
+        "connection_id",
+        connection.id
+      );
   }
 
   return result;
 }
+
